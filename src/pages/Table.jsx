@@ -40,6 +40,7 @@ export default function Table() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [people, setPeople] = useState([]);
   const [copied, setCopied] = useState(false);
+  const [trayOpen, setTrayOpen] = useState(true);
 
   const canvasRef = useRef(null);
   const dragRef = useRef(null);
@@ -341,22 +342,7 @@ export default function Table() {
       <header className="table-header">
         <Link to="/" className="btn btn-ghost">←</Link>
 
-        {decks.length > 1 ? (
-          <select
-            className="table-deck-select"
-            value={activeDeckId}
-            onChange={(e) => setActiveDeckId(e.target.value)}
-            title="Активна колода"
-          >
-            {decks.map((d) => (
-              <option key={d.id} value={d.id}>
-                {d.name} · {piles[d.id]?.length ?? 0}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <span className="table-deck-name">{activeDeck.name}</span>
-        )}
+        <span className="table-deck-name">{activeDeck.name}</span>
         <span className="pile-counter">У колоді: {activePile.length}</span>
 
         {shared && (
@@ -402,6 +388,35 @@ export default function Table() {
             <img src={activeDeck.back} alt="Колода" draggable={false} />
             <span className="deck-pile-count">{activePile.length}</span>
           </button>
+        )}
+
+        {/* Панель вибору колоди — сорочки всіх колод ліворуч від стосу */}
+        {decks.length > 1 && (
+          <>
+            <button
+              className="deck-tray-toggle"
+              onClick={() => setTrayOpen((o) => !o)}
+              title={trayOpen ? 'Сховати колоди' : 'Показати колоди'}
+            >
+              {trayOpen ? '›' : '‹'}
+            </button>
+            {trayOpen && (
+              <div className="deck-tray">
+                {decks.map((d) => (
+                  <button
+                    key={d.id}
+                    className={`deck-tray-item ${d.id === activeDeckId ? 'is-active' : ''}`}
+                    onClick={() => setActiveDeckId(d.id)}
+                    title={d.name}
+                  >
+                    <img src={d.back} alt="" draggable={false} />
+                    <span className="deck-tray-name">{d.name}</span>
+                    <span className="deck-tray-count">{piles[d.id]?.length ?? 0}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         )}
 
         {table.length === 0 && (

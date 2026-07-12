@@ -295,18 +295,100 @@ body {
 .table-deck-name {
   font-weight: 600;
 }
-.table-deck-select {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-  border: none;
-  border-radius: 10px;
-  padding: 8px 10px;
-  font-size: 0.95rem;
-  max-width: 240px;
-  cursor: pointer;
+/* ===== Панель колод біля стосу ===== */
+.deck-tray {
+  position: absolute;
+  right: 196px;
+  bottom: 28px;
+  display: flex;
+  gap: 12px;
+  max-width: 300px; /* ~3 колоди, далі — прокрутка */
+  overflow-x: auto;
+  padding: 4px 4px 8px;
+  z-index: 5;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.5) rgba(255, 255, 255, 0.12);
 }
-.table-deck-select option {
-  color: var(--text);
+.deck-tray::-webkit-scrollbar {
+  height: 7px;
+}
+.deck-tray::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 4px;
+}
+.deck-tray::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.5);
+  border-radius: 4px;
+}
+.deck-tray-item {
+  flex: 0 0 auto;
+  width: 82px;
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  display: grid;
+  gap: 4px;
+  position: relative;
+}
+.deck-tray-item img {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  opacity: 0.72;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.deck-tray-item:hover img {
+  opacity: 1;
+  transform: translateY(-3px);
+}
+.deck-tray-item.is-active img {
+  opacity: 1;
+  outline: 3px solid var(--gold);
+  outline-offset: 1px;
+}
+.deck-tray-name {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 0.72rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+.deck-tray-count {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  background: rgba(20, 26, 46, 0.9);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 2px 7px;
+}
+.deck-tray-item.is-active .deck-tray-count {
+  background: var(--gold);
+  color: #1a2340;
+}
+.deck-tray-toggle {
+  position: absolute;
+  right: 158px;
+  bottom: 68px;
+  width: 28px;
+  height: 56px;
+  border: none;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.35);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 1.3rem;
+  cursor: pointer;
+  z-index: 5;
+}
+.deck-tray-toggle:hover {
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
 }
 
 .table-canvas {
@@ -684,9 +766,19 @@ body {
   .table-deck-name {
     display: none; /* економимо місце в шапці */
   }
-  .table-deck-select {
-    max-width: 150px;
-    font-size: 0.85rem;
+  .deck-tray {
+    right: 142px;
+    bottom: 16px;
+    max-width: 44vw;
+  }
+  .deck-tray-item {
+    width: 64px;
+  }
+  .deck-tray-toggle {
+    right: 108px;
+    bottom: 44px;
+    width: 24px;
+    height: 46px;
   }
 }
 
