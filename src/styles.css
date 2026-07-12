@@ -295,6 +295,19 @@ body {
 .table-deck-name {
   font-weight: 600;
 }
+.table-deck-select {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 0.95rem;
+  max-width: 240px;
+  cursor: pointer;
+}
+.table-deck-select option {
+  color: var(--text);
+}
 
 .table-canvas {
   flex: 1;
@@ -670,6 +683,10 @@ body {
   }
   .table-deck-name {
     display: none; /* економимо місце в шапці */
+  }
+  .table-deck-select {
+    max-width: 150px;
+    font-size: 0.85rem;
   }
 }
 

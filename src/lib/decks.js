@@ -51,6 +51,12 @@ export async function loadAllDecks() {
   }
 }
 
+// Усі колоди разом із картами — для столу з кількома колодами
+export async function loadFullDecks() {
+  const list = await loadAllDecks();
+  return Promise.all(list.map((d) => (d.cards ? d : loadDeck(d.id))));
+}
+
 export async function countCards(deckId) {
   const { count } = await supabase
     .from('cards').select('id', { count: 'exact', head: true })

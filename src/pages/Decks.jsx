@@ -7,10 +7,8 @@ export default function Decks() {
   const [decks, setDecks] = useState(null);
   const [error, setError] = useState(null);
 
-  // Форма нової колоди
   const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
-  const [files, setFiles] = useState([]); // [{file, url, name}]
+  const [files, setFiles] = useState([]); // [{file, url}]
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState(null);
   const fileInputRef = useRef(null);
@@ -33,7 +31,7 @@ export default function Decks() {
     const imgs = [...list].filter((f) => f.type.startsWith('image/'));
     setFiles((prev) => [
       ...prev,
-      ...imgs.map((file) => ({ file, url: URL.createObjectURL(file), name: '' })),
+      ...imgs.map((file) => ({ file, url: URL.createObjectURL(file) })),
     ]);
   }
 
@@ -44,10 +42,6 @@ export default function Decks() {
     });
   }
 
-  function setCardName(i, val) {
-    setFiles((prev) => prev.map((f, idx) => (idx === i ? { ...f, name: val } : f)));
-  }
-
   async function handleCreate(e) {
     e.preventDefault();
     if (files.length < 2) {
@@ -56,21 +50,20 @@ export default function Decks() {
     }
     setBusy(true);
     setError(null);
+    const defaultName = `Колода від ${new Date().toLocaleDateString('uk-UA')}`;
     try {
       await createDeck(
         {
-          name: name.trim(),
-          description: description.trim(),
+          name: name.trim() || defaultName,
+          description: '',
           files: files.map((f) => f.file),
-          cardNames: files.map((f) => f.name),
+          cardNames: [],
         },
         (done, total) => setProgress(`${done} / ${total}`)
       );
       files.forEach((f) => URL.revokeObjectURL(f.url));
       setFiles([]);
       setName('');
-      setDescription('');
-      setProgress(null);
       await refresh();
     } catch (err) {
       setError(err.message || 'Не вдалося створити колоду');
@@ -130,22 +123,6 @@ export default function Decks() {
       <section className="deck-create">
         <h2>Нова колода</h2>
         <form onSubmit={handleCreate}>
-          <input
-            type="text"
-            placeholder="Назва колоди"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            maxLength={60}
-            required
-          />
-          <textarea
-            placeholder="Опис (необовʼязково): для якої роботи ця колода?"
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            rows={2}
-            maxLength={300}
-          />
-
           <label
             className="dropzone"
             onDragOver={(e) => e.preventDefault()}
@@ -166,8 +143,8 @@ export default function Decks() {
               }}
             />
             {files.length === 0
-              ? 'Перетягніть зображення сюди або натисніть, щоб обрати'
-              : `Карток: ${files.length}. Додати ще?`}
+              ? '📂 Перетягніть зображення карток сюди або натисніть, щоб обрати'
+              : `Карток: ${files.length}. Натисніть, щоб додати ще`}
           </label>
 
           {files.length > 0 && (
@@ -183,21 +160,25 @@ export default function Decks() {
                   >
                     ✕
                   </button>
-                  <input
-                    type="text"
-                    placeholder="Назва (необовʼязково)"
-                    value={f.name}
-                    onChange={(e) => setCardName(i, e.target.value)}
-                    maxLength={40}
-                  />
                 </div>
               ))}
             </div>
           )}
 
-          <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? `Завантажуємо… ${progress || ''}` : 'Створити колоду'}
-          </button>
+          {files.length > 0 && (
+            <>
+              <input
+                type="text"
+                placeholder={`Назва (необовʼязково) — інакше «Колода від ${new Date().toLocaleDateString('uk-UA')}»`}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                maxLength={60}
+              />
+              <button type="submit" className="btn btn-primary" disabled={busy}>
+                {busy ? `Завантажуємо… ${progress || ''}` : `Створити колоду (${files.length} карток)`}
+              </button>
+            </>
+          )}
           <p className="upload-hint">
             Зображення стискаються автоматично. Завантажуйте лише картинки, на
             які маєте права (власні, куплені або з вільною ліцензією).

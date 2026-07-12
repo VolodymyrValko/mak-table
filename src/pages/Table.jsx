@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Link, useParams, useLocation } from 'react-router-dom';
-import { loadDeck } from '../lib/decks.js';
+import { loadFullDecks } from '../lib/decks.js';
 import { supabase } from '../lib/supabase.js';
 import {
   fetchSession, fetchTableCards, updatePile, upsertCard, deleteCard,
   deleteAllCards, subscribeToSession, joinPresence, rowToCard,
 } from '../lib/session.js';
 
-const storageKey = (deckId) => `mak-table-${deckId}-v2`;
+const STORAGE_KEY = 'mak-table-all-v3';
 const CARD_W = 130;
 const CARD_H = 195;
 
@@ -21,17 +21,18 @@ function shuffle(arr) {
 }
 
 export default function Table() {
-  const { sessionId: code } = useParams(); // код спільної сесії з URL
+  const { sessionId: code } = useParams();
   const location = useLocation();
   const shared = Boolean(code && supabase);
   const myName = location.state?.name || (shared ? 'Учасник' : '');
 
-  const [deck, setDeck] = useState(null);
-  const [session, setSession] = useState(null); // рядок sessions із БД
+  const [decks, setDecks] = useState(null);   // усі колоди з картами
+  const [activeDeckId, setActiveDeckId] = useState(null);
+  const [session, setSession] = useState(null);
   const [error, setError] = useState(null);
   const [loaded, setLoaded] = useState(false);
 
-  const [pile, setPile] = useState([]);
+  const [piles, setPiles] = useState({});     // { deckId: [cardId, ...] }
   const [table, setTable] = useState([]);
   const [maxZ, setMaxZ] = useState(1);
   const [selected, setSelected] = useState(null);
@@ -46,7 +47,17 @@ export default function Table() {
   const noteTimerRef = useRef({});
   const [canvasSize, setCanvasSize] = useState({ w: 1, h: 1 });
 
-  // Розмір полотна (координати карт нормалізовані 0..1)
+  // Глобальний індекс: id карти → { card, deck }
+  const cardIndex = useMemo(() => {
+    const m = {};
+    decks?.forEach((d) =>
+      d.cards.forEach((c) => {
+        m[c.id] = { card: c, deck: d };
+      })
+    );
+    return m;
+  }, [decks]);
+
   useEffect(() => {
     function measure() {
       const el = canvasRef.current;
@@ -64,16 +75,40 @@ export default function Table() {
 
     (async () => {
       try {
+        const all = await loadFullDecks();
+        if (!all.length) throw new Error('Немає жодної колоди');
+        setDecks(all);
+        const validDeck = (id) => all.some((d) => d.id === id);
+        const idx = {};
+        all.forEach((d) => d.cards.forEach((c) => (idx[c.id] = d.id)));
+
         if (shared) {
           const s = await fetchSession(code);
-          const d = await loadDeck(s.deck_id);
-          setDeck(d);
           setSession(s);
-          setPile(s.pile);
+
           const rows = await fetchTableCards(s.id);
-          const cards = rows.map(rowToCard);
+          const cards = rows.map(rowToCard).filter((tc) => idx[tc.cardId]);
+          const onTable = new Set(cards.map((c) => c.cardId));
+
+          // pile: старі сесії — масив, нові — обʼєкт по колодах
+          const p = Array.isArray(s.pile)
+            ? { [s.deck_id]: s.pile }
+            : { ...(s.pile || {}) };
+          // колоди, яких у сесії ще нема — ініціалізуємо локально
+          all.forEach((d) => {
+            if (!p[d.id]) {
+              p[d.id] = shuffle(
+                d.cards.map((c) => c.id).filter((id) => !onTable.has(id))
+              );
+            } else {
+              p[d.id] = p[d.id].filter((id) => idx[id] && !onTable.has(id));
+            }
+          });
+
+          setPiles(p);
           setTable(cards);
           setMaxZ(cards.reduce((m, c) => Math.max(m, c.z), 1));
+          setActiveDeckId(validDeck(s.deck_id) ? s.deck_id : all[0].id);
 
           unsubDb = subscribeToSession(s, {
             onCardUpsert: (tc) =>
@@ -85,27 +120,41 @@ export default function Table() {
                 return copy;
               }),
             onCardDelete: (uid) => setTable((t) => t.filter((c) => c.uid !== uid)),
-            onPileChange: (p) => setPile(p),
+            onPileChange: (p2) =>
+              setPiles(Array.isArray(p2) ? { [s.deck_id]: p2 } : p2 || {}),
           });
           unsubPresence = joinPresence(code, myName, setPeople);
         } else {
-          const deckId =
-            new URLSearchParams(location.search).get('deck') || 'nature';
-          const d = await loadDeck(deckId);
-          setDeck(d);
-          const saved = localStorage.getItem(storageKey(d.id));
+          const qDeck = new URLSearchParams(location.search).get('deck');
+          let p = {};
+          let t = [];
+          let z = 1;
+          let act = null;
+
+          const saved = localStorage.getItem(STORAGE_KEY);
           if (saved) {
             try {
               const s = JSON.parse(saved);
-              const valid = new Set(d.cards.map((c) => c.id));
-              setPile(s.pile.filter((id) => valid.has(id)));
-              setTable(s.table.filter((tc) => valid.has(tc.cardId)));
-              setMaxZ(s.maxZ || 1);
-              setLoaded(true);
-              return;
+              t = (s.table || []).filter((tc) => idx[tc.cardId]);
+              const onTable = new Set(t.map((c) => c.cardId));
+              all.forEach((d) => {
+                const savedPile = (s.piles || {})[d.id];
+                p[d.id] = savedPile
+                  ? savedPile.filter((id) => idx[id] && !onTable.has(id))
+                  : shuffle(d.cards.map((c) => c.id).filter((id) => !onTable.has(id)));
+              });
+              z = s.maxZ || 1;
+              act = validDeck(s.activeDeckId) ? s.activeDeckId : null;
             } catch { /* почнемо заново */ }
           }
-          setPile(shuffle(d.cards.map((c) => c.id)));
+          if (!Object.keys(p).length) {
+            all.forEach((d) => (p[d.id] = shuffle(d.cards.map((c) => c.id))));
+          }
+
+          setPiles(p);
+          setTable(t);
+          setMaxZ(z);
+          setActiveDeckId(validDeck(qDeck) ? qDeck : act || all[0].id);
         }
         setLoaded(true);
       } catch (e) {
@@ -122,13 +171,16 @@ export default function Table() {
 
   // Автозбереження (тільки соло)
   useEffect(() => {
-    if (!loaded || shared || !deck) return;
-    localStorage.setItem(storageKey(deck.id), JSON.stringify({ pile, table, maxZ }));
-  }, [pile, table, maxZ, loaded, shared, deck]);
+    if (!loaded || shared) return;
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ piles, table, maxZ, activeDeckId })
+    );
+  }, [piles, table, maxZ, activeDeckId, loaded, shared]);
 
-  const cardById = (id) => deck.cards.find((c) => c.id === id);
+  const activeDeck = decks?.find((d) => d.id === activeDeckId);
+  const activePile = piles[activeDeckId] || [];
 
-  // Локальна зміна карти + синхронізація
   const patchCard = useCallback((uid, patch, sync = true) => {
     setTable((t) => {
       const next = t.map((tc) => (tc.uid === uid ? { ...tc, ...patch } : tc));
@@ -156,16 +208,19 @@ export default function Table() {
     };
     setMaxZ(tc.z);
     setTable((t) => [...t, tc]);
-    const newPile = pile.filter((id) => id !== cardId);
-    setPile(newPile);
+    const newPiles = {
+      ...piles,
+      [activeDeckId]: activePile.filter((id) => id !== cardId),
+    };
+    setPiles(newPiles);
     setSelected(tc.uid);
     if (shared) {
       upsertCard(tc, session.id);
-      updatePile(session.id, newPile);
+      updatePile(session.id, newPiles);
     }
   }
 
-  const drawRandom = () => pile.length && placeCard(pile[0], false);
+  const drawRandom = () => activePile.length && placeCard(activePile[0], false);
   const pickCard = (cardId) => { setPickerOpen(false); placeCard(cardId, true); };
 
   function bringToFront(uid) {
@@ -182,19 +237,22 @@ export default function Table() {
   function returnToPile(uid) {
     const tc = table.find((c) => c.uid === uid);
     if (!tc) return;
+    const home = cardIndex[tc.cardId]?.deck.id;
     setTable((t) => t.filter((c) => c.uid !== uid));
-    const newPile = [...pile, tc.cardId];
-    setPile(newPile);
+    const newPiles = home
+      ? { ...piles, [home]: [...(piles[home] || []), tc.cardId] }
+      : piles;
+    setPiles(newPiles);
     if (selected === uid) setSelected(null);
     if (zoomed === uid) setZoomed(null);
     if (shared) {
       deleteCard(uid);
-      updatePile(session.id, newPile);
+      updatePile(session.id, newPiles);
     }
   }
 
   function setNote(uid, note) {
-    patchCard(uid, { note }, false); // локально миттєво
+    patchCard(uid, { note }, false);
     if (shared) {
       clearTimeout(noteTimerRef.current[uid]);
       noteTimerRef.current[uid] = setTimeout(() => {
@@ -208,16 +266,17 @@ export default function Table() {
   }
 
   function shufflePile() {
-    const p = shuffle(pile);
-    setPile(p);
-    if (shared) updatePile(session.id, p);
+    const newPiles = { ...piles, [activeDeckId]: shuffle(activePile) };
+    setPiles(newPiles);
+    if (shared) updatePile(session.id, newPiles);
   }
 
   function clearTable() {
     if (!window.confirm('Прибрати всі карти зі столу й почати заново?')) return;
-    const p = shuffle(deck.cards.map((c) => c.id));
+    const p = {};
+    decks.forEach((d) => (p[d.id] = shuffle(d.cards.map((c) => c.id))));
     setTable([]);
-    setPile(p);
+    setPiles(p);
     setSelected(null);
     setZoomed(null);
     if (shared) {
@@ -253,7 +312,6 @@ export default function Table() {
     if (!d) return;
     const x = (e.clientX - d.dx) / canvasSize.w;
     const y = (e.clientY - d.dy) / canvasSize.h;
-    // під час руху шлемо в мережу не частіше ніж раз на 120 мс
     const throttleOk = Date.now() - lastSentRef.current > 120;
     if (throttleOk) lastSentRef.current = Date.now();
     patchCard(d.uid, { x, y }, throttleOk);
@@ -263,7 +321,6 @@ export default function Table() {
     const d = dragRef.current;
     dragRef.current = null;
     if (d && shared) {
-      // фінальна позиція — завжди
       setTable((t) => {
         const tc = t.find((c) => c.uid === d.uid);
         if (tc) upsertCard(tc, session.id);
@@ -273,16 +330,34 @@ export default function Table() {
   }
 
   if (error) return <div className="table-status">Помилка: {error}</div>;
-  if (!deck || !loaded) return <div className="table-status">Завантаження столу…</div>;
+  if (!decks || !loaded || !activeDeck)
+    return <div className="table-status">Завантаження столу…</div>;
 
   const zoomedCard = zoomed ? table.find((c) => c.uid === zoomed) : null;
+  const zoomedEntry = zoomedCard ? cardIndex[zoomedCard.cardId] : null;
 
   return (
     <div className="table-page">
       <header className="table-header">
         <Link to="/" className="btn btn-ghost">←</Link>
-        <span className="table-deck-name">{deck.name}</span>
-        <span className="pile-counter">У колоді: {pile.length}</span>
+
+        {decks.length > 1 ? (
+          <select
+            className="table-deck-select"
+            value={activeDeckId}
+            onChange={(e) => setActiveDeckId(e.target.value)}
+            title="Активна колода"
+          >
+            {decks.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name} · {piles[d.id]?.length ?? 0}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <span className="table-deck-name">{activeDeck.name}</span>
+        )}
+        <span className="pile-counter">У колоді: {activePile.length}</span>
 
         {shared && (
           <div className="share-block">
@@ -296,13 +371,13 @@ export default function Table() {
         )}
 
         <div className="table-actions">
-          <button className="btn btn-table" onClick={drawRandom} disabled={!pile.length}>
+          <button className="btn btn-table" onClick={drawRandom} disabled={!activePile.length}>
             🎴 Витягнути
           </button>
-          <button className="btn btn-table" onClick={() => setPickerOpen(true)} disabled={!pile.length}>
+          <button className="btn btn-table" onClick={() => setPickerOpen(true)} disabled={!activePile.length}>
             👁 Обрати
           </button>
-          <button className="btn btn-table" onClick={shufflePile} disabled={pile.length < 2}>
+          <button className="btn btn-table" onClick={shufflePile} disabled={activePile.length < 2}>
             🔀 Перемішати
           </button>
           <button className="btn btn-table btn-danger" onClick={clearTable} disabled={!table.length}>
@@ -318,10 +393,14 @@ export default function Table() {
           if (e.target === canvasRef.current) setSelected(null);
         }}
       >
-        {pile.length > 0 && (
-          <button className="deck-pile" onClick={drawRandom} title="Натисніть, щоб витягнути карту">
-            <img src={deck.back} alt="Колода" draggable={false} />
-            <span className="deck-pile-count">{pile.length}</span>
+        {activePile.length > 0 && (
+          <button
+            className="deck-pile"
+            onClick={drawRandom}
+            title={`Витягнути карту з колоди «${activeDeck.name}»`}
+          >
+            <img src={activeDeck.back} alt="Колода" draggable={false} />
+            <span className="deck-pile-count">{activePile.length}</span>
           </button>
         )}
 
@@ -332,8 +411,8 @@ export default function Table() {
         )}
 
         {table.map((tc) => {
-          const card = cardById(tc.cardId);
-          if (!card) return null;
+          const entry = cardIndex[tc.cardId];
+          if (!entry) return null;
           return (
             <div
               key={tc.uid}
@@ -350,8 +429,8 @@ export default function Table() {
               onDoubleClick={() => flipCard(tc.uid)}
             >
               <div className={`card-inner ${tc.faceUp ? 'face-up' : ''}`}>
-                <img className="card-face card-back" src={deck.back} alt="" draggable={false} />
-                <img className="card-face card-front" src={card.image} alt={card.name} draggable={false} />
+                <img className="card-face card-back" src={entry.deck.back} alt="" draggable={false} />
+                <img className="card-face card-front" src={entry.card.image} alt={entry.card.name} draggable={false} />
               </div>
               {tc.note && <span className="note-dot" title="Є нотатка" />}
 
@@ -371,15 +450,16 @@ export default function Table() {
         <div className="modal-overlay" onClick={() => setPickerOpen(false)}>
           <div className="picker-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-title-row">
-              <h2>Оберіть карту</h2>
+              <h2>Оберіть карту · {activeDeck.name}</h2>
               <button className="modal-close" onClick={() => setPickerOpen(false)}>✕</button>
             </div>
             <div className="picker-grid">
-              {pile.map((id) => {
-                const card = cardById(id);
+              {activePile.map((id) => {
+                const entry = cardIndex[id];
+                if (!entry) return null;
                 return (
                   <button key={id} className="picker-card" onClick={() => pickCard(id)}>
-                    <img src={card.image} alt={card.name} loading="lazy" />
+                    <img src={entry.card.image} alt={entry.card.name} loading="lazy" />
                   </button>
                 );
               })}
@@ -388,18 +468,18 @@ export default function Table() {
         </div>
       )}
 
-      {zoomedCard && (
+      {zoomedCard && zoomedEntry && (
         <div className="modal-overlay" onClick={() => setZoomed(null)}>
           <div className="zoom-modal" onClick={(e) => e.stopPropagation()}>
             <button className="modal-close zoom-close" onClick={() => setZoomed(null)}>✕</button>
             <img
               className="zoom-image"
-              src={zoomedCard.faceUp ? cardById(zoomedCard.cardId).image : deck.back}
+              src={zoomedCard.faceUp ? zoomedEntry.card.image : zoomedEntry.deck.back}
               alt=""
             />
             <div className="zoom-side">
               {zoomedCard.faceUp ? (
-                <h3>{cardById(zoomedCard.cardId).name || 'Карта'}</h3>
+                <h3>{zoomedEntry.card.name || 'Карта'}</h3>
               ) : (
                 <h3>Карта ще закрита</h3>
               )}
