@@ -1,0 +1,560 @@
+/* ===== Базові стилі ===== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #f6f3ec;
+  --bg-dark: #1a2340;
+  --text: #2b2b33;
+  --text-muted: #6b6b76;
+  --accent: #2d3a5f;
+  --accent-hover: #3d4d7a;
+  --gold: #c9a86a;
+  --card-radius: 12px;
+  --felt: #2e5443; /* сукно столу */
+}
+
+body {
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.6;
+}
+
+/* ===== Кнопки ===== */
+.btn {
+  display: inline-block;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 22px;
+  font-size: 1rem;
+  cursor: pointer;
+  text-decoration: none;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover {
+  background: var(--accent-hover);
+}
+.btn-lg {
+  padding: 14px 34px;
+  font-size: 1.15rem;
+}
+.btn-secondary {
+  background: transparent;
+  color: var(--accent);
+  border: 2px solid var(--accent);
+}
+.btn-secondary:hover:not(:disabled) {
+  background: rgba(45, 58, 95, 0.08);
+}
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.home-cta {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.home-error {
+  margin-top: 14px;
+  color: #a33;
+  font-size: 0.9rem;
+}
+.btn-ghost {
+  background: transparent;
+  color: var(--text-muted);
+}
+.btn-ghost:hover {
+  color: var(--text);
+}
+
+/* ===== Головна ===== */
+.home {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.home-hero {
+  text-align: center;
+  padding: 12vh 0 8vh;
+}
+.home-hero h1 {
+  font-size: 3rem;
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+.home-tagline {
+  font-size: 1.2rem;
+  color: var(--text-muted);
+  margin: 16px auto 32px;
+  max-width: 520px;
+}
+
+.home-steps h2 {
+  color: var(--accent);
+  margin-bottom: 16px;
+}
+.home-steps ol {
+  padding-left: 24px;
+  display: grid;
+  gap: 10px;
+}
+
+.home-footer {
+  margin-top: auto;
+  padding: 40px 0 16px;
+}
+.disclaimer {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* ===== Стіл ===== */
+.table-page {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--felt);
+}
+
+.table-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 16px;
+  background: rgba(0, 0, 0, 0.25);
+  color: #fff;
+}
+.table-header .btn-ghost {
+  color: rgba(255, 255, 255, 0.75);
+}
+.table-header .btn-ghost:hover {
+  color: #fff;
+}
+.table-deck-name {
+  font-weight: 600;
+}
+
+.table-canvas {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+.table-status {
+  color: #fff;
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.pile-counter {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.share-block {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.presence {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.9rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  padding: 4px 10px;
+  cursor: default;
+}
+
+.table-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.btn-table {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  padding: 8px 14px;
+  font-size: 0.9rem;
+}
+.btn-table:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.22);
+}
+.btn-table:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.btn-danger:hover:not(:disabled) {
+  background: rgba(180, 60, 60, 0.55);
+}
+
+/* ===== Колода на столі ===== */
+.deck-pile {
+  position: absolute;
+  right: 28px;
+  bottom: 28px;
+  width: 110px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.15s ease;
+  z-index: 5;
+}
+.deck-pile:hover {
+  transform: translateY(-4px) rotate(-2deg);
+}
+.deck-pile img {
+  width: 100%;
+  border-radius: var(--card-radius);
+  box-shadow:
+    2px 3px 0 rgba(0, 0, 0, 0.25),
+    4px 6px 0 rgba(0, 0, 0, 0.2),
+    0 10px 24px rgba(0, 0, 0, 0.5);
+  display: block;
+}
+.deck-pile-count {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  background: var(--gold);
+  color: #1a2340;
+  font-weight: 700;
+  font-size: 0.85rem;
+  border-radius: 999px;
+  padding: 2px 9px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+.table-empty-hint {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 1.1rem;
+  pointer-events: none;
+  padding: 24px;
+  text-align: center;
+}
+
+/* ===== Карта на столі ===== */
+.table-card {
+  position: absolute;
+  width: 130px;
+  height: 195px;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.table-card:active {
+  cursor: grabbing;
+}
+.table-card.is-selected .card-inner {
+  outline: 3px solid var(--gold);
+  outline-offset: 2px;
+  border-radius: var(--card-radius);
+}
+
+.card-inner {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  transform-style: preserve-3d;
+  transition: transform 0.45s ease;
+}
+.card-inner.face-up {
+  transform: rotateY(180deg);
+}
+.card-face {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--card-radius);
+  backface-visibility: hidden;
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.45);
+}
+.card-front {
+  transform: rotateY(180deg);
+}
+
+.note-dot {
+  position: absolute;
+  top: -6px;
+  left: -6px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--gold);
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.card-toolbar {
+  position: absolute;
+  top: -44px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  background: rgba(20, 26, 46, 0.92);
+  border-radius: 10px;
+  padding: 5px;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+.card-toolbar button {
+  border: none;
+  background: transparent;
+  font-size: 1.05rem;
+  cursor: pointer;
+  padding: 4px 7px;
+  border-radius: 6px;
+}
+.card-toolbar button:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+
+/* ===== Модалки ===== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 14, 28, 0.72);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+  padding: 20px;
+}
+
+.modal-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+.modal-close {
+  border: none;
+  background: rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  width: 34px;
+  height: 34px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.modal-close:hover {
+  background: rgba(0, 0, 0, 0.16);
+}
+
+.picker-modal {
+  background: var(--bg);
+  border-radius: 16px;
+  padding: 22px;
+  max-width: 860px;
+  width: 100%;
+  max-height: 84vh;
+  overflow-y: auto;
+}
+.picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+}
+.picker-card {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  border-radius: var(--card-radius);
+  overflow: hidden;
+  aspect-ratio: 2 / 3;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.picker-card:hover {
+  transform: translateY(-4px) scale(1.03);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.25);
+}
+.picker-card img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.zoom-modal {
+  background: var(--bg);
+  border-radius: 16px;
+  padding: 22px;
+  display: flex;
+  gap: 22px;
+  max-width: 760px;
+  width: 100%;
+  max-height: 88vh;
+  position: relative;
+}
+.zoom-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+.zoom-image {
+  width: min(46%, 340px);
+  border-radius: var(--card-radius);
+  object-fit: cover;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+.zoom-side {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 8px;
+}
+.zoom-side h3 {
+  color: var(--accent);
+  font-size: 1.4rem;
+}
+.zoom-side .btn-table {
+  background: var(--accent);
+  align-self: flex-start;
+}
+.zoom-side .btn-table:hover {
+  background: var(--accent-hover);
+}
+.note-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+.note-label textarea {
+  border: 1px solid #d8d4c8;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font: inherit;
+  font-weight: 400;
+  resize: vertical;
+  background: #fff;
+}
+.note-label textarea:focus {
+  outline: 2px solid var(--accent);
+  border-color: transparent;
+}
+
+/* ===== Адаптив: планшет і телефон ===== */
+html,
+body {
+  overscroll-behavior: none; /* без pull-to-refresh під час перетягування */
+}
+
+@media (max-width: 900px) {
+  .table-header {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .table-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+  }
+  .btn-table {
+    flex: 1;
+    padding: 10px 6px;
+    font-size: 0.85rem;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 640px) {
+  .home-hero {
+    padding: 8vh 0 6vh;
+  }
+  .home-hero h1 {
+    font-size: 2.2rem;
+  }
+
+  .zoom-modal {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  .zoom-image {
+    width: 60%;
+    align-self: center;
+  }
+
+  /* менші карти на малому екрані */
+  .table-card {
+    width: 100px;
+    height: 150px;
+  }
+  .deck-pile {
+    width: 84px;
+    right: 16px;
+    bottom: 16px;
+  }
+  .card-toolbar {
+    top: -50px;
+  }
+  .card-toolbar button {
+    font-size: 1.2rem; /* більші цілі для пальця */
+    padding: 7px 10px;
+  }
+  .picker-grid {
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+    gap: 8px;
+  }
+  .table-deck-name {
+    display: none; /* економимо місце в шапці */
+  }
+}
+
+/* ===== Приєднання ===== */
+.join-page {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.join-card {
+  background: #fff;
+  border-radius: 16px;
+  padding: 36px;
+  max-width: 400px;
+  width: 100%;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
+  display: grid;
+  gap: 16px;
+}
+.join-card h1 {
+  font-size: 1.5rem;
+  color: var(--accent);
+}
+.join-card input {
+  padding: 12px 14px;
+  border: 1px solid #d8d4c8;
+  border-radius: 10px;
+  font-size: 1rem;
+}
+.join-card input:focus {
+  outline: 2px solid var(--accent);
+  border-color: transparent;
+}
