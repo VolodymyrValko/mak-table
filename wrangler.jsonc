@@ -1,0 +1,10 @@
+{
+  // Конфігурація деплою на Cloudflare Workers (статичні асети)
+  "name": "mak-table",
+  "compatibility_date": "2026-07-12",
+  "assets": {
+    "directory": "./dist",
+    // SPA: всі маршрути (/table, /join/...) віддають index.html
+    "not_found_handling": "single-page-application"
+  }
+}
