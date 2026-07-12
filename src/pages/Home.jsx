@@ -1,19 +1,37 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
 import { createSession } from '../lib/session.js';
-import { loadDeck } from '../lib/decks.js';
+import { loadDeck, loadAllDecks } from '../lib/decks.js';
 
 export default function Home() {
   const navigate = useNavigate();
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState(null);
+  const [decks, setDecks] = useState([]);
+  const [deckId, setDeckId] = useState(
+    () => localStorage.getItem('mak-selected-deck') || 'nature'
+  );
+
+  useEffect(() => {
+    loadAllDecks().then((list) => {
+      setDecks(list);
+      if (!list.some((d) => d.id === deckId)) setDeckId(list[0]?.id || 'nature');
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  function selectDeck(id) {
+    setDeckId(id);
+    localStorage.setItem('mak-selected-deck', id);
+  }
 
   async function handleCreateShared() {
     setCreating(true);
     setError(null);
     try {
-      const deck = await loadDeck('nature');
+      const deck = await loadDeck(deckId);
+      if (!deck.cards.length) throw new Error('У цій колоді немає карток');
       const pile = deck.cards.map((c) => c.id).sort(() => Math.random() - 0.5);
       const session = await createSession(deck.id, pile);
       navigate(`/table/${session.code}`, { state: { name: 'Ведучий' } });
@@ -31,8 +49,26 @@ export default function Home() {
           Онлайн-простір для роботи з метафоричними асоціативними картками —
           наодинці або разом із психологом.
         </p>
+
+        {decks.length > 1 && (
+          <div className="deck-select">
+            <label htmlFor="deck">Колода:</label>
+            <select
+              id="deck"
+              value={deckId}
+              onChange={(e) => selectDeck(e.target.value)}
+            >
+              {decks.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
         <div className="home-cta">
-          <Link to="/table" className="btn btn-primary btn-lg">
+          <Link to={`/table?deck=${deckId}`} className="btn btn-primary btn-lg">
             Відкрити стіл
           </Link>
           {supabase && (
@@ -45,6 +81,11 @@ export default function Home() {
             </button>
           )}
         </div>
+        {supabase && (
+          <Link to="/decks" className="decks-link">
+            🃏 Мої колоди
+          </Link>
+        )}
         {error && <p className="home-error">{error}</p>}
       </header>
 

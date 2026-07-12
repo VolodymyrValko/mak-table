@@ -7,8 +7,7 @@ import {
   deleteAllCards, subscribeToSession, joinPresence, rowToCard,
 } from '../lib/session.js';
 
-const DECK_ID = 'nature';
-const STORAGE_KEY = `mak-table-${DECK_ID}-v2`;
+const storageKey = (deckId) => `mak-table-${deckId}-v2`;
 const CARD_W = 130;
 const CARD_H = 195;
 
@@ -65,11 +64,10 @@ export default function Table() {
 
     (async () => {
       try {
-        const d = await loadDeck(DECK_ID);
-        setDeck(d);
-
         if (shared) {
           const s = await fetchSession(code);
+          const d = await loadDeck(s.deck_id);
+          setDeck(d);
           setSession(s);
           setPile(s.pile);
           const rows = await fetchTableCards(s.id);
@@ -91,7 +89,11 @@ export default function Table() {
           });
           unsubPresence = joinPresence(code, myName, setPeople);
         } else {
-          const saved = localStorage.getItem(STORAGE_KEY);
+          const deckId =
+            new URLSearchParams(location.search).get('deck') || 'nature';
+          const d = await loadDeck(deckId);
+          setDeck(d);
+          const saved = localStorage.getItem(storageKey(d.id));
           if (saved) {
             try {
               const s = JSON.parse(saved);
@@ -120,9 +122,9 @@ export default function Table() {
 
   // Автозбереження (тільки соло)
   useEffect(() => {
-    if (!loaded || shared) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ pile, table, maxZ }));
-  }, [pile, table, maxZ, loaded, shared]);
+    if (!loaded || shared || !deck) return;
+    localStorage.setItem(storageKey(deck.id), JSON.stringify({ pile, table, maxZ }));
+  }, [pile, table, maxZ, loaded, shared, deck]);
 
   const cardById = (id) => deck.cards.find((c) => c.id === id);
 
@@ -397,7 +399,7 @@ export default function Table() {
             />
             <div className="zoom-side">
               {zoomedCard.faceUp ? (
-                <h3>{cardById(zoomedCard.cardId).name}</h3>
+                <h3>{cardById(zoomedCard.cardId).name || 'Карта'}</h3>
               ) : (
                 <h3>Карта ще закрита</h3>
               )}
