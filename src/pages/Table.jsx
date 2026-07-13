@@ -203,6 +203,7 @@ export default function Table() {
       x: Math.min(Math.max(0.5 - (CARD_W / canvasSize.w) / 2 + jitterX, 0.02), 0.9),
       y: Math.min(Math.max(0.5 - (CARD_H / canvasSize.h) / 2 + jitterY, 0.02), 0.75),
       rot: (Math.random() - 0.5) * 10,
+      scale: 1,
       faceUp,
       z: maxZ + 1,
       note: '',
@@ -221,7 +222,12 @@ export default function Table() {
     }
   }
 
-  const drawRandom = () => activePile.length && placeCard(activePile[0], false);
+  // Витягування завжди випадкове — незалежно від порядку в стосі
+  function drawRandom(faceUp) {
+    if (!activePile.length) return;
+    const cardId = activePile[Math.floor(Math.random() * activePile.length)];
+    placeCard(cardId, faceUp);
+  }
   const pickCard = (cardId) => { setPickerOpen(false); placeCard(cardId, true); };
 
   function bringToFront(uid) {
@@ -266,12 +272,6 @@ export default function Table() {
     }
   }
 
-  function shufflePile() {
-    const newPiles = { ...piles, [activeDeckId]: shuffle(activePile) };
-    setPiles(newPiles);
-    if (shared) updatePile(session.id, newPiles);
-  }
-
   function clearTable() {
     if (!window.confirm('Прибрати всі карти зі столу й почати заново?')) return;
     const p = {};
@@ -294,7 +294,32 @@ export default function Table() {
     });
   }
 
+  // ==== Клавіша Delete — прибрати вибрану карту зі столу ====
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key !== 'Delete') return;
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+      if (zoomed || pickerOpen || !selected) return;
+      returnToPile(selected);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  // Фінальна синхронізація карти після жесту
+  function syncCard(uid) {
+    if (!shared) return;
+    setTable((t) => {
+      const tc = t.find((c) => c.uid === uid);
+      if (tc) upsertCard(tc, session.id);
+      return t;
+    });
+  }
+
   // ==== Перетягування ====
+  const zoomTimerRef = useRef(null);
+
   function onCardPointerDown(e, uid) {
     e.preventDefault();
     const tc = table.find((c) => c.uid === uid);
@@ -302,6 +327,10 @@ export default function Table() {
       uid,
       dx: e.clientX - tc.x * canvasSize.w,
       dy: e.clientY - tc.y * canvasSize.h,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
+      wasSelected: selected === uid,
     };
     bringToFront(uid);
     setSelected(uid);
@@ -311,6 +340,8 @@ export default function Table() {
   function onCardPointerMove(e) {
     const d = dragRef.current;
     if (!d) return;
+    if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) > 4) d.moved = true;
+    if (!d.moved) return;
     const x = (e.clientX - d.dx) / canvasSize.w;
     const y = (e.clientY - d.dy) / canvasSize.h;
     const throttleOk = Date.now() - lastSentRef.current > 120;
@@ -321,13 +352,60 @@ export default function Table() {
   function onCardPointerUp() {
     const d = dragRef.current;
     dragRef.current = null;
-    if (d && shared) {
-      setTable((t) => {
-        const tc = t.find((c) => c.uid === d.uid);
-        if (tc) upsertCard(tc, session.id);
-        return t;
-      });
+    if (!d) return;
+    if (d.moved) {
+      syncCard(d.uid);
+    } else if (d.wasSelected) {
+      // клік по вже вибраній карті — розглянути (з затримкою,
+      // щоб подвійний клік устиг перевернути замість цього)
+      clearTimeout(zoomTimerRef.current);
+      zoomTimerRef.current = setTimeout(() => setZoomed(d.uid), 280);
     }
+  }
+
+  // ==== Жести на хватах: розмір (за кут) і поворот ====
+  function canvasPoint(e) {
+    const r = canvasRef.current.getBoundingClientRect();
+    return { px: e.clientX - r.left, py: e.clientY - r.top };
+  }
+
+  function startGesture(e, uid, mode) {
+    e.stopPropagation();
+    e.preventDefault();
+    const tc = table.find((c) => c.uid === uid);
+    if (!tc) return;
+    const { px, py } = canvasPoint(e);
+    const ox = tc.x * canvasSize.w;
+    const oy = tc.y * canvasSize.h;
+    const s = tc.scale ?? 1;
+    const cx = ox + (CARD_W * s) / 2;
+    const cy = oy + (CARD_H * s) / 2;
+
+    const g =
+      mode === 'resize'
+        ? { startDist: Math.max(20, Math.hypot(px - ox, py - oy)), startScale: s, ox, oy }
+        : { startAngle: Math.atan2(py - cy, px - cx), startRot: tc.rot, cx, cy };
+
+    const move = (ev) => {
+      const { px: mx, py: my } = canvasPoint(ev);
+      const throttleOk = Date.now() - lastSentRef.current > 120;
+      if (throttleOk) lastSentRef.current = Date.now();
+      if (mode === 'resize') {
+        const dist = Math.hypot(mx - g.ox, my - g.oy);
+        const scale = Math.min(3, Math.max(0.4, (g.startScale * dist) / g.startDist));
+        patchCard(uid, { scale }, throttleOk);
+      } else {
+        const angle = Math.atan2(my - g.cy, mx - g.cx);
+        const rot = g.startRot + ((angle - g.startAngle) * 180) / Math.PI;
+        patchCard(uid, { rot }, throttleOk);
+      }
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      syncCard(uid);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up, { once: true });
   }
 
   if (error) return <div className="table-status">Помилка: {error}</div>;
@@ -357,14 +435,14 @@ export default function Table() {
         )}
 
         <div className="table-actions">
-          <button className="btn btn-table" onClick={drawRandom} disabled={!activePile.length}>
-            🎴 Витягнути
+          <button className="btn btn-table" onClick={() => drawRandom(true)} disabled={!activePile.length}>
+            🎴 Витягнути горілиць
+          </button>
+          <button className="btn btn-table" onClick={() => drawRandom(false)} disabled={!activePile.length}>
+            🂠 Витягнути долілиць
           </button>
           <button className="btn btn-table" onClick={() => setPickerOpen(true)} disabled={!activePile.length}>
             👁 Обрати
-          </button>
-          <button className="btn btn-table" onClick={shufflePile} disabled={activePile.length < 2}>
-            🔀 Перемішати
           </button>
           <button className="btn btn-table btn-danger" onClick={clearTable} disabled={!table.length}>
             ✨ Очистити
@@ -382,8 +460,8 @@ export default function Table() {
         {activePile.length > 0 && (
           <button
             className="deck-pile"
-            onClick={drawRandom}
-            title={`Витягнути карту з колоди «${activeDeck.name}»`}
+            onClick={() => drawRandom(false)}
+            title={`Витягнути карту долілиць із колоди «${activeDeck.name}»`}
           >
             <img src={activeDeck.back} alt="Колода" draggable={false} />
             <span className="deck-pile-count">{activePile.length}</span>
@@ -428,6 +506,7 @@ export default function Table() {
         {table.map((tc) => {
           const entry = cardIndex[tc.cardId];
           if (!entry) return null;
+          const s = tc.scale ?? 1;
           return (
             <div
               key={tc.uid}
@@ -435,13 +514,18 @@ export default function Table() {
               style={{
                 left: tc.x * canvasSize.w,
                 top: tc.y * canvasSize.h,
+                width: CARD_W * s,
+                height: CARD_H * s,
                 zIndex: tc.z,
                 transform: `rotate(${tc.rot}deg)`,
               }}
               onPointerDown={(e) => onCardPointerDown(e, tc.uid)}
               onPointerMove={onCardPointerMove}
               onPointerUp={onCardPointerUp}
-              onDoubleClick={() => flipCard(tc.uid)}
+              onDoubleClick={() => {
+                clearTimeout(zoomTimerRef.current);
+                flipCard(tc.uid);
+              }}
             >
               <div className={`card-inner ${tc.faceUp ? 'face-up' : ''}`}>
                 <img className="card-face card-back" src={entry.deck.back} alt="" draggable={false} />
@@ -450,11 +534,20 @@ export default function Table() {
               {tc.note && <span className="note-dot" title="Є нотатка" />}
 
               {selected === tc.uid && (
-                <div className="card-toolbar" onPointerDown={(e) => e.stopPropagation()}>
-                  <button onClick={() => flipCard(tc.uid)} title="Перевернути">🔄</button>
-                  <button onClick={() => setZoomed(tc.uid)} title="Розглянути">🔍</button>
-                  <button onClick={() => returnToPile(tc.uid)} title="Повернути в колоду">↩</button>
-                </div>
+                <>
+                  <div
+                    className="handle handle-rotate"
+                    title="Повернути"
+                    onPointerDown={(e) => startGesture(e, tc.uid, 'rotate')}
+                  >
+                    ⟳
+                  </div>
+                  <div
+                    className="handle handle-resize"
+                    title="Змінити розмір"
+                    onPointerDown={(e) => startGesture(e, tc.uid, 'resize')}
+                  />
+                </>
               )}
             </div>
           );
