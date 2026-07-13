@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Link, useParams, useLocation } from 'react-router-dom';
-import { loadFullDecks } from '../lib/decks.js';
+import { loadFullDecks, assignBacks } from '../lib/decks.js';
 import { supabase } from '../lib/supabase.js';
 import {
   fetchSession, fetchTableCards, updatePile, upsertCard, deleteCard,
@@ -108,7 +108,7 @@ export default function Table() {
 
     (async () => {
       try {
-        const all = await loadFullDecks();
+        const all = assignBacks(await loadFullDecks());
         if (!all.length) throw new Error('Немає жодної колоди');
         setDecks(all);
         const validDeck = (id) => all.some((d) => d.id === id);
@@ -1003,7 +1003,22 @@ export default function Table() {
                   }}
                 />
               ) : (
-                a.text || <span className="text-ann-placeholder">Текст</span>
+                <>
+                  {a.text || <span className="text-ann-placeholder">Текст</span>}
+                  {selectedAnn === a.uid && (
+                    <button
+                      className="text-edit-btn"
+                      title="Редагувати текст"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingAnn(a.uid);
+                      }}
+                    >
+                      ✏️
+                    </button>
+                  )}
+                </>
               )}
             </div>
           ))}

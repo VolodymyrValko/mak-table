@@ -4,6 +4,24 @@ import { supabase } from './supabase.js';
 const BUILTIN_IDS = ['nature'];
 export const DEFAULT_BACK = '/decks/nature/back.svg';
 
+// Рубашки не закріплені за колодою постійно — видаються "у лобі" по колу
+// залежно від позиції колоди у списку на момент відкриття столу.
+export const BACKS = [
+  '/decks/nature/back.svg',
+  '/decks/backs/back-2.svg',
+  '/decks/backs/back-3.svg',
+  '/decks/backs/back-4.svg',
+];
+
+export function backForIndex(i) {
+  return BACKS[i % BACKS.length];
+}
+
+// Присвоює рубашки за поточним порядком колод (без збереження в БД)
+export function assignBacks(decks) {
+  return decks.map((d, i) => ({ ...d, back: backForIndex(i) }));
+}
+
 async function loadBuiltinDeck(deckId) {
   const res = await fetch(`/decks/${deckId}/deck.json`);
   if (!res.ok) throw new Error(`Не вдалося завантажити колоду «${deckId}»`);
