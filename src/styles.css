@@ -417,6 +417,54 @@ body {
   position: relative;
   overflow: hidden;
 }
+.table-canvas.tool-draw {
+  cursor: crosshair;
+}
+.table-canvas.tool-text {
+  cursor: text;
+}
+
+/* ===== Малювання і текст на столі ===== */
+.draw-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9999;
+}
+
+.text-ann {
+  position: absolute;
+  max-width: 320px;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: pre-wrap;
+  word-break: break-word;
+  cursor: grab;
+  padding: 2px 4px;
+  border-radius: 6px;
+  user-select: none;
+  touch-action: none;
+}
+.text-ann.is-selected {
+  outline: 2px dashed var(--gold);
+  outline-offset: 3px;
+}
+.text-ann-placeholder {
+  opacity: 0.5;
+  font-style: italic;
+}
+.text-ann-input {
+  font: inherit;
+  font-weight: inherit;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.92);
+  border: 2px solid var(--gold);
+  border-radius: 6px;
+  padding: 2px 4px;
+  min-width: 140px;
+  resize: both;
+  outline: none;
+}
 
 .table-status {
   color: #fff;
@@ -442,6 +490,55 @@ body {
   border-radius: 999px;
   padding: 4px 10px;
   cursor: default;
+}
+
+/* ===== Інструменти: обрати / малювати / текст ===== */
+.tool-group {
+  display: flex;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 4px;
+}
+.btn-tool {
+  background: transparent;
+  color: rgba(255, 255, 255, 0.75);
+  padding: 6px 10px;
+  font-size: 1rem;
+  line-height: 1;
+}
+.btn-tool:hover {
+  background: rgba(255, 255, 255, 0.15);
+}
+.btn-tool.is-active {
+  background: var(--gold);
+  color: #1a2340;
+}
+
+.tool-props {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 6px 10px;
+}
+.swatch {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+}
+.swatch.is-active {
+  border-color: var(--gold);
+  transform: scale(1.15);
+}
+.tool-props input[type='range'] {
+  width: 90px;
+  margin-left: 4px;
 }
 
 .table-actions {

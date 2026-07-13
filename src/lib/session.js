@@ -93,6 +93,58 @@ export async function deleteAllCards(sessionId) {
   await supabase.from('table_cards').delete().eq('session_id', sessionId);
 }
 
+// Перетворення: рядок БД ↔ анотація (малюнок або текст) на столі
+export function rowToAnnotation(row) {
+  return {
+    uid: row.id,
+    kind: row.kind,
+    points: row.points,
+    text: row.text,
+    x: row.x,
+    y: row.y,
+    color: row.color,
+    size: row.size,
+    z: row.z,
+  };
+}
+
+export function annotationToRow(a, sessionId) {
+  return {
+    id: a.uid,
+    session_id: sessionId,
+    kind: a.kind,
+    points: a.points ?? null,
+    text: a.text ?? '',
+    x: a.x,
+    y: a.y,
+    color: a.color,
+    size: a.size,
+    z: a.z,
+    updated_by: clientId,
+  };
+}
+
+export async function fetchAnnotations(sessionId) {
+  const { data, error } = await supabase
+    .from('table_annotations')
+    .select()
+    .eq('session_id', sessionId);
+  if (error) throw error;
+  return data;
+}
+
+export async function upsertAnnotation(a, sessionId) {
+  await supabase.from('table_annotations').upsert(annotationToRow(a, sessionId));
+}
+
+export async function deleteAnnotation(uid) {
+  await supabase.from('table_annotations').delete().eq('id', uid);
+}
+
+export async function deleteAllAnnotations(sessionId) {
+  await supabase.from('table_annotations').delete().eq('session_id', sessionId);
+}
+
 // Підписка на зміни столу; повертає функцію відписки
 export function subscribeToSession(session, handlers) {
   // Унікальна назва каналу — інакше повторний mount (StrictMode) впаде
@@ -114,6 +166,17 @@ export function subscribeToSession(session, handlers) {
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'sessions', filter: `id=eq.${session.id}` },
       (payload) => handlers.onPileChange?.(payload.new.pile)
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'table_annotations', filter: `session_id=eq.${session.id}` },
+      (payload) => {
+        if (payload.eventType === 'DELETE') {
+          handlers.onAnnDelete?.(payload.old.id);
+        } else if (payload.new.updated_by !== clientId) {
+          handlers.onAnnUpsert?.(rowToAnnotation(payload.new));
+        }
+      }
     )
     .subscribe();
   return () => supabase.removeChannel(channel);
