@@ -36,7 +36,6 @@ export default function Table() {
   const [table, setTable] = useState([]);
   const [maxZ, setMaxZ] = useState(1);
   const [selected, setSelected] = useState(null);
-  const [zoomed, setZoomed] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [people, setPeople] = useState([]);
   const [copied, setCopied] = useState(false);
@@ -45,7 +44,6 @@ export default function Table() {
   const canvasRef = useRef(null);
   const dragRef = useRef(null);
   const lastSentRef = useRef(0);
-  const noteTimerRef = useRef({});
   const [canvasSize, setCanvasSize] = useState({ w: 1, h: 1 });
 
   // Глобальний індекс: id карти → { card, deck }
@@ -251,24 +249,9 @@ export default function Table() {
       : piles;
     setPiles(newPiles);
     if (selected === uid) setSelected(null);
-    if (zoomed === uid) setZoomed(null);
     if (shared) {
       deleteCard(uid);
       updatePile(session.id, newPiles);
-    }
-  }
-
-  function setNote(uid, note) {
-    patchCard(uid, { note }, false);
-    if (shared) {
-      clearTimeout(noteTimerRef.current[uid]);
-      noteTimerRef.current[uid] = setTimeout(() => {
-        setTable((t) => {
-          const tc = t.find((c) => c.uid === uid);
-          if (tc) upsertCard(tc, session.id);
-          return t;
-        });
-      }, 600);
     }
   }
 
@@ -279,7 +262,6 @@ export default function Table() {
     setTable([]);
     setPiles(p);
     setSelected(null);
-    setZoomed(null);
     if (shared) {
       deleteAllCards(session.id);
       updatePile(session.id, p);
@@ -300,7 +282,7 @@ export default function Table() {
       if (e.key !== 'Delete') return;
       const tag = document.activeElement?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-      if (zoomed || pickerOpen || !selected) return;
+      if (pickerOpen || !selected) return;
       returnToPile(selected);
     }
     window.addEventListener('keydown', onKey);
@@ -318,8 +300,6 @@ export default function Table() {
   }
 
   // ==== Перетягування ====
-  const zoomTimerRef = useRef(null);
-
   function onCardPointerDown(e, uid) {
     e.preventDefault();
     const tc = table.find((c) => c.uid === uid);
@@ -330,7 +310,6 @@ export default function Table() {
       startX: e.clientX,
       startY: e.clientY,
       moved: false,
-      wasSelected: selected === uid,
     };
     bringToFront(uid);
     setSelected(uid);
@@ -352,15 +331,7 @@ export default function Table() {
   function onCardPointerUp() {
     const d = dragRef.current;
     dragRef.current = null;
-    if (!d) return;
-    if (d.moved) {
-      syncCard(d.uid);
-    } else if (d.wasSelected) {
-      // клік по вже вибраній карті — розглянути (з затримкою,
-      // щоб подвійний клік устиг перевернути замість цього)
-      clearTimeout(zoomTimerRef.current);
-      zoomTimerRef.current = setTimeout(() => setZoomed(d.uid), 280);
-    }
+    if (d && d.moved) syncCard(d.uid);
   }
 
   // ==== Жести на хватах: розмір (за кут) і поворот ====
@@ -411,9 +382,6 @@ export default function Table() {
   if (error) return <div className="table-status">Помилка: {error}</div>;
   if (!decks || !loaded || !activeDeck)
     return <div className="table-status">Завантаження столу…</div>;
-
-  const zoomedCard = zoomed ? table.find((c) => c.uid === zoomed) : null;
-  const zoomedEntry = zoomedCard ? cardIndex[zoomedCard.cardId] : null;
 
   return (
     <div className="table-page">
@@ -469,7 +437,7 @@ export default function Table() {
         )}
 
         {/* Панель вибору колоди — сорочки всіх колод ліворуч від стосу */}
-        {decks.length > 1 && (
+        {decks.length >= 1 && (
           <>
             <button
               className="deck-tray-toggle"
@@ -492,6 +460,16 @@ export default function Table() {
                     <span className="deck-tray-count">{piles[d.id]?.length ?? 0}</span>
                   </button>
                 ))}
+                {supabase && (
+                  <Link
+                    to="/decks"
+                    className="deck-tray-item deck-tray-add"
+                    title="Додати нову колоду"
+                  >
+                    <span className="deck-tray-add-icon">+</span>
+                    <span className="deck-tray-name">Нова колода</span>
+                  </Link>
+                )}
               </div>
             )}
           </>
@@ -522,16 +500,12 @@ export default function Table() {
               onPointerDown={(e) => onCardPointerDown(e, tc.uid)}
               onPointerMove={onCardPointerMove}
               onPointerUp={onCardPointerUp}
-              onDoubleClick={() => {
-                clearTimeout(zoomTimerRef.current);
-                flipCard(tc.uid);
-              }}
+              onDoubleClick={() => flipCard(tc.uid)}
             >
               <div className={`card-inner ${tc.faceUp ? 'face-up' : ''}`}>
                 <img className="card-face card-back" src={entry.deck.back} alt="" draggable={false} />
                 <img className="card-face card-front" src={entry.card.image} alt={entry.card.name} draggable={false} />
               </div>
-              {tc.note && <span className="note-dot" title="Є нотатка" />}
 
               {selected === tc.uid && (
                 <>
@@ -576,37 +550,6 @@ export default function Table() {
         </div>
       )}
 
-      {zoomedCard && zoomedEntry && (
-        <div className="modal-overlay" onClick={() => setZoomed(null)}>
-          <div className="zoom-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close zoom-close" onClick={() => setZoomed(null)}>✕</button>
-            <img
-              className="zoom-image"
-              src={zoomedCard.faceUp ? zoomedEntry.card.image : zoomedEntry.deck.back}
-              alt=""
-            />
-            <div className="zoom-side">
-              {zoomedCard.faceUp ? (
-                <h3>{zoomedEntry.card.name || 'Карта'}</h3>
-              ) : (
-                <h3>Карта ще закрита</h3>
-              )}
-              <button className="btn btn-table" onClick={() => flipCard(zoomedCard.uid)}>
-                🔄 Перевернути
-              </button>
-              <label className="note-label">
-                Ваші асоціації
-                <textarea
-                  value={zoomedCard.note}
-                  onChange={(e) => setNote(zoomedCard.uid, e.target.value)}
-                  placeholder="Що ви бачите? Про що це для вас?"
-                  rows={6}
-                />
-              </label>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
