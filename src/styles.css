@@ -518,27 +518,76 @@ body {
 .tool-props {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   background: rgba(255, 255, 255, 0.1);
   border-radius: 10px;
-  padding: 6px 10px;
+  padding: 6px 8px;
+  flex-wrap: nowrap;
+}
+
+/* Перемикач заливка/контур — до чого застосується обраний колір */
+.target-toggle {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex-shrink: 0;
+}
+.target-toggle button {
+  width: 24px;
+  height: 17px;
+  border: none;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.65rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.target-toggle button.is-active {
+  background: var(--gold);
+  color: #1a2340;
+}
+
+/* Сітка кольорів: фіксовано 4 колонки → максимум 2-3 ряди,
+   не розтягується по горизонталі разом з палітрою */
+.swatch-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 16px);
+  grid-auto-rows: 16px;
+  gap: 4px;
+  flex-shrink: 0;
 }
 .swatch {
-  width: 20px;
-  height: 20px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.5);
   cursor: pointer;
   padding: 0;
-  flex-shrink: 0;
 }
 .swatch.is-active {
   border-color: var(--gold);
-  transform: scale(1.15);
+  transform: scale(1.2);
 }
+.swatch-none {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 0.6rem;
+  display: grid;
+  place-items: center;
+  border-style: dashed;
+}
+
 .tool-props input[type='range'] {
-  width: 90px;
-  margin-left: 4px;
+  width: 60px;
+  flex-shrink: 0;
+}
+.size-slider {
+  accent-color: var(--gold);
+}
+.alpha-slider {
+  accent-color: #fff;
 }
 
 .table-actions {

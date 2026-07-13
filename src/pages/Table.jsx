@@ -14,6 +14,14 @@ const CARD_W = 130;
 const CARD_H = 195;
 const PALETTE = ['#e74c3c', '#e67e22', '#f1c40f', '#27ae60', '#2980b9', '#8e44ad', '#1a1a1a', '#ffffff'];
 
+function hexToRgba(hex, alpha = 1) {
+  if (!hex) return null;
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const n = parseInt(full, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
+
 function shuffle(arr) {
   const a = [...arr];
   for (let i = a.length - 1; i > 0; i--) {
@@ -49,10 +57,22 @@ export default function Table() {
   const [tool, setTool] = useState('select'); // 'select' | 'draw' | 'text'
   const [selectedAnn, setSelectedAnn] = useState(null);
   const [editingAnn, setEditingAnn] = useState(null);
+  const [colorTarget, setColorTarget] = useState('fill'); // 'fill' | 'outline'
+
   const [drawColor, setDrawColor] = useState('#e74c3c');
   const [drawSize, setDrawSize] = useState(4);
+  const [drawAlpha, setDrawAlpha] = useState(1);
+  const [drawOutlineColor, setDrawOutlineColor] = useState(null);
+  const [drawOutlineWidth, setDrawOutlineWidth] = useState(3);
+  const [drawOutlineAlpha, setDrawOutlineAlpha] = useState(1);
+
   const [textColor, setTextColor] = useState('#1a2340');
   const [textSize, setTextSize] = useState(22);
+  const [textAlpha, setTextAlpha] = useState(1);
+  const [textOutlineColor, setTextOutlineColor] = useState(null);
+  const [textOutlineWidth, setTextOutlineWidth] = useState(2);
+  const [textOutlineAlpha, setTextOutlineAlpha] = useState(1);
+
   const annMaxZRef = useRef(1);
 
   const canvasRef = useRef(null);
@@ -459,7 +479,9 @@ export default function Table() {
     annMaxZRef.current += 1;
     const ann = {
       uid, kind: 'draw', points: [first], text: '',
-      x: 0, y: 0, color: drawColor, size: drawSize, z: annMaxZRef.current,
+      x: 0, y: 0, color: drawColor, size: drawSize, alpha: drawAlpha,
+      outlineColor: drawOutlineColor, outlineWidth: drawOutlineWidth, outlineAlpha: drawOutlineAlpha,
+      z: annMaxZRef.current,
     };
     setAnnotations((list) => [...list, ann]);
     let pts = [first];
@@ -497,7 +519,9 @@ export default function Table() {
     const ann = {
       uid, kind: 'text', points: null, text: '',
       x: px / canvasSize.w, y: py / canvasSize.h,
-      color: textColor, size: textSize, z: annMaxZRef.current,
+      color: textColor, size: textSize, alpha: textAlpha,
+      outlineColor: textOutlineColor, outlineWidth: textOutlineWidth, outlineAlpha: textOutlineAlpha,
+      z: annMaxZRef.current,
     };
     setAnnotations((list) => [...list, ann]);
     setSelectedAnn(uid);
@@ -555,6 +579,140 @@ export default function Table() {
     window.addEventListener('pointerup', up, { once: true });
   }
 
+  // ==== Панель кольору/розміру/прозорості для малювання і тексту ====
+  const kindDefaults = {
+    draw: {
+      color: drawColor, setColor: setDrawColor,
+      size: drawSize, setSize: setDrawSize, sizeMin: 2, sizeMax: 20, sizeLabel: 'Товщина лінії',
+      alpha: drawAlpha, setAlpha: setDrawAlpha,
+      outlineColor: drawOutlineColor, setOutlineColor: setDrawOutlineColor,
+      outlineWidth: drawOutlineWidth, setOutlineWidth: setDrawOutlineWidth,
+      outlineWidthMin: 0, outlineWidthMax: 14, outlineLabel: 'Товщина контуру',
+      outlineAlpha: drawOutlineAlpha, setOutlineAlpha: setDrawOutlineAlpha,
+    },
+    text: {
+      color: textColor, setColor: setTextColor,
+      size: textSize, setSize: setTextSize, sizeMin: 12, sizeMax: 56, sizeLabel: 'Розмір тексту',
+      alpha: textAlpha, setAlpha: setTextAlpha,
+      outlineColor: textOutlineColor, setOutlineColor: setTextOutlineColor,
+      outlineWidth: textOutlineWidth, setOutlineWidth: setTextOutlineWidth,
+      outlineWidthMin: 0, outlineWidthMax: 8, outlineLabel: 'Товщина контуру',
+      outlineAlpha: textOutlineAlpha, setOutlineAlpha: setTextOutlineAlpha,
+    },
+  };
+
+  function renderColorPanel(kind) {
+    const activeAnnObj = selectedAnn ? annotations.find((a) => a.uid === selectedAnn) : null;
+    const editingExisting = !!activeAnnObj && activeAnnObj.kind === kind;
+    if (tool !== kind && !editingExisting) return null;
+
+    const cfg = kindDefaults[kind];
+    const curColor = editingExisting ? activeAnnObj.color : cfg.color;
+    const curOutlineColor = editingExisting ? activeAnnObj.outlineColor : cfg.outlineColor;
+    const curSize = editingExisting ? activeAnnObj.size : cfg.size;
+    const curAlpha = editingExisting ? activeAnnObj.alpha ?? 1 : cfg.alpha;
+    const curOutlineWidth = editingExisting ? activeAnnObj.outlineWidth ?? cfg.outlineWidth : cfg.outlineWidth;
+    const curOutlineAlpha = editingExisting ? activeAnnObj.outlineAlpha ?? 1 : cfg.outlineAlpha;
+
+    function pickColor(c) {
+      if (colorTarget === 'fill') {
+        cfg.setColor(c);
+        if (editingExisting) patchAnn(selectedAnn, { color: c });
+      } else {
+        cfg.setOutlineColor(c);
+        if (editingExisting) patchAnn(selectedAnn, { outlineColor: c });
+      }
+    }
+    function clearOutline() {
+      cfg.setOutlineColor(null);
+      if (editingExisting) patchAnn(selectedAnn, { outlineColor: null });
+    }
+    function changeSize(v) {
+      if (colorTarget === 'fill') {
+        cfg.setSize(v);
+        if (editingExisting) patchAnn(selectedAnn, { size: v });
+      } else {
+        cfg.setOutlineWidth(v);
+        if (editingExisting) patchAnn(selectedAnn, { outlineWidth: v });
+      }
+    }
+    function changeAlpha(v) {
+      if (colorTarget === 'fill') {
+        cfg.setAlpha(v);
+        if (editingExisting) patchAnn(selectedAnn, { alpha: v });
+      } else {
+        cfg.setOutlineAlpha(v);
+        if (editingExisting) patchAnn(selectedAnn, { outlineAlpha: v });
+      }
+    }
+
+    const activeSwatchColor = colorTarget === 'fill' ? curColor : curOutlineColor;
+    const sizeVal = colorTarget === 'fill' ? curSize : curOutlineWidth;
+    const alphaVal = colorTarget === 'fill' ? curAlpha : curOutlineAlpha;
+    const sizeMin = colorTarget === 'fill' ? cfg.sizeMin : cfg.outlineWidthMin;
+    const sizeMax = colorTarget === 'fill' ? cfg.sizeMax : cfg.outlineWidthMax;
+    const sizeTitle = colorTarget === 'fill' ? cfg.sizeLabel : cfg.outlineLabel;
+
+    return (
+      <div className="tool-props">
+        <div className="target-toggle">
+          <button
+            className={colorTarget === 'fill' ? 'is-active' : ''}
+            onClick={() => setColorTarget('fill')}
+            title="Колір заливки"
+          >
+            🎨
+          </button>
+          <button
+            className={colorTarget === 'outline' ? 'is-active' : ''}
+            onClick={() => setColorTarget('outline')}
+            title="Колір контуру"
+          >
+            ⭕
+          </button>
+        </div>
+        <div className="swatch-grid">
+          {colorTarget === 'outline' && (
+            <button
+              className={`swatch swatch-none ${!activeSwatchColor ? 'is-active' : ''}`}
+              onClick={clearOutline}
+              title="Без контуру"
+            >
+              ✕
+            </button>
+          )}
+          {PALETTE.map((c) => (
+            <button
+              key={c}
+              className={`swatch ${activeSwatchColor === c ? 'is-active' : ''}`}
+              style={{ background: c }}
+              onClick={() => pickColor(c)}
+              title={c}
+            />
+          ))}
+        </div>
+        <input
+          type="range"
+          className="size-slider"
+          min={sizeMin}
+          max={sizeMax}
+          value={sizeVal}
+          onChange={(e) => changeSize(Number(e.target.value))}
+          title={sizeTitle}
+        />
+        <input
+          type="range"
+          className="alpha-slider"
+          min={0}
+          max={100}
+          value={Math.round(alphaVal * 100)}
+          onChange={(e) => changeAlpha(Number(e.target.value) / 100)}
+          title="Прозорість"
+        />
+      </div>
+    );
+  }
+
   if (error) return <div className="table-status">Помилка: {error}</div>;
   if (!decks || !loaded || !activeDeck)
     return <div className="table-status">Завантаження столу…</div>;
@@ -602,61 +760,8 @@ export default function Table() {
           </button>
         </div>
 
-        {(tool === 'draw' || (selectedAnn && annotations.find((a) => a.uid === selectedAnn)?.kind === 'draw')) && (
-          <div className="tool-props">
-            {PALETTE.map((c) => (
-              <button
-                key={c}
-                className={`swatch ${drawColor === c ? 'is-active' : ''}`}
-                style={{ background: c }}
-                onClick={() => {
-                  setDrawColor(c);
-                  if (selectedAnn) patchAnn(selectedAnn, { color: c });
-                }}
-              />
-            ))}
-            <input
-              type="range"
-              min={2}
-              max={20}
-              value={selectedAnn ? annotations.find((a) => a.uid === selectedAnn)?.size ?? drawSize : drawSize}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                setDrawSize(v);
-                if (selectedAnn) patchAnn(selectedAnn, { size: v });
-              }}
-              title="Товщина лінії"
-            />
-          </div>
-        )}
-
-        {(tool === 'text' || (selectedAnn && annotations.find((a) => a.uid === selectedAnn)?.kind === 'text')) && (
-          <div className="tool-props">
-            {PALETTE.map((c) => (
-              <button
-                key={c}
-                className={`swatch ${textColor === c ? 'is-active' : ''}`}
-                style={{ background: c }}
-                onClick={() => {
-                  setTextColor(c);
-                  if (selectedAnn) patchAnn(selectedAnn, { color: c });
-                }}
-              />
-            ))}
-            <input
-              type="range"
-              min={12}
-              max={56}
-              value={selectedAnn ? annotations.find((a) => a.uid === selectedAnn)?.size ?? textSize : textSize}
-              onChange={(e) => {
-                const v = Number(e.target.value);
-                setTextSize(v);
-                if (selectedAnn) patchAnn(selectedAnn, { size: v });
-              }}
-              title="Розмір тексту"
-            />
-          </div>
-        )}
+        {renderColorPanel('draw')}
+        {renderColorPanel('text')}
 
         {selectedAnn && (
           <button className="btn btn-table btn-danger" onClick={() => deleteAnn(selectedAnn)}>
@@ -805,12 +910,24 @@ export default function Table() {
                     points={pts}
                     fill="none"
                     stroke="transparent"
-                    strokeWidth={a.size + 16}
+                    strokeWidth={a.size + (a.outlineWidth ?? 0) * 2 + 16}
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     style={{ pointerEvents: 'stroke', cursor: 'grab' }}
                     onPointerDown={(e) => onAnnPointerDown(e, a.uid)}
                   />
+                  {a.outlineColor && (
+                    <polyline
+                      points={pts}
+                      fill="none"
+                      stroke={a.outlineColor}
+                      strokeWidth={a.size + (a.outlineWidth ?? 0) * 2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ pointerEvents: 'none' }}
+                      opacity={a.outlineAlpha ?? 1}
+                    />
+                  )}
                   <polyline
                     points={pts}
                     fill="none"
@@ -819,7 +936,7 @@ export default function Table() {
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     style={{ pointerEvents: 'none' }}
-                    opacity={selectedAnn === a.uid ? 0.7 : 1}
+                    opacity={(a.alpha ?? 1) * (selectedAnn === a.uid ? 0.85 : 1)}
                   />
                   {selectedAnn === a.uid && (
                     <polyline
@@ -848,9 +965,13 @@ export default function Table() {
               style={{
                 left: a.x * canvasSize.w,
                 top: a.y * canvasSize.h,
-                color: a.color,
+                color: hexToRgba(a.color, a.alpha ?? 1),
                 fontSize: a.size,
                 zIndex: 10000 + a.z,
+                WebkitTextStroke: a.outlineColor
+                  ? `${a.outlineWidth ?? 0}px ${hexToRgba(a.outlineColor, a.outlineAlpha ?? 1)}`
+                  : undefined,
+                paintOrder: 'stroke fill',
               }}
               onPointerDown={(e) => onAnnPointerDown(e, a.uid)}
               onDoubleClick={(e) => {
@@ -861,7 +982,13 @@ export default function Table() {
               {editingAnn === a.uid ? (
                 <textarea
                   className="text-ann-input"
-                  style={{ color: a.color, fontSize: a.size }}
+                  style={{
+                    color: hexToRgba(a.color, a.alpha ?? 1),
+                    fontSize: a.size,
+                    WebkitTextStroke: a.outlineColor
+                      ? `${a.outlineWidth ?? 0}px ${hexToRgba(a.outlineColor, a.outlineAlpha ?? 1)}`
+                      : undefined,
+                  }}
                   defaultValue={a.text}
                   autoFocus
                   onFocus={(e) => e.target.select()}

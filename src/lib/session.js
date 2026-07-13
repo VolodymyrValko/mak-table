@@ -104,6 +104,10 @@ export function rowToAnnotation(row) {
     y: row.y,
     color: row.color,
     size: row.size,
+    alpha: row.alpha ?? 1,
+    outlineColor: row.outline_color ?? null,
+    outlineWidth: row.outline_width ?? 3,
+    outlineAlpha: row.outline_alpha ?? 1,
     z: row.z,
   };
 }
@@ -119,6 +123,10 @@ export function annotationToRow(a, sessionId) {
     y: a.y,
     color: a.color,
     size: a.size,
+    alpha: a.alpha ?? 1,
+    outline_color: a.outlineColor ?? null,
+    outline_width: a.outlineWidth ?? 3,
+    outline_alpha: a.outlineAlpha ?? 1,
     z: a.z,
     updated_by: clientId,
   };
