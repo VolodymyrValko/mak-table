@@ -50,6 +50,32 @@ export async function updatePile(sessionId, pile) {
   await supabase.from('sessions').update({ pile }).eq('id', sessionId);
 }
 
+// Список усіх сесій — для сторінки вибору, з ким приєднатись
+export async function listSessions() {
+  const { data, error } = await supabase
+    .from('sessions')
+    .select('id, code, deck_id, status, created_at')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
+export async function endSession(sessionId) {
+  const { error } = await supabase
+    .from('sessions')
+    .update({ status: 'ended' })
+    .eq('id', sessionId);
+  if (error) throw error;
+}
+
+export async function reactivateSession(sessionId) {
+  const { error } = await supabase
+    .from('sessions')
+    .update({ status: 'active' })
+    .eq('id', sessionId);
+  if (error) throw error;
+}
+
 // Перетворення: рядок БД ↔ карта на столі
 export function rowToCard(row) {
   return {

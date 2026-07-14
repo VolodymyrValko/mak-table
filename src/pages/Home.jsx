@@ -54,9 +54,14 @@ export default function Home() {
           )}
         </div>
         {supabase && (
-          <Link to="/decks" className="decks-link">
-            🃏 Мої колоди
-          </Link>
+          <div className="home-links">
+            <Link to="/decks" className="decks-link">
+              🃏 Мої колоди
+            </Link>
+            <Link to="/sessions" className="decks-link">
+              📋 Спільні сесії
+            </Link>
+          </div>
         )}
         {error && <p className="home-error">{error}</p>}
       </header>

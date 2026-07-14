@@ -396,6 +396,9 @@ export default function Table() {
   // ==== Перетягування ====
   function onCardPointerDown(e, uid) {
     e.preventDefault();
+    // не даємо події дійти до canvas-обробника — інакше, якщо активний
+    // інструмент малювання/тексту, клік по картці ще й почне малювати штрих
+    e.stopPropagation();
     const tc = table.find((c) => c.uid === uid);
     dragRef.current = {
       uid,
@@ -803,6 +806,7 @@ export default function Table() {
         {activePile.length > 0 && (
           <button
             className="deck-pile"
+            onPointerDown={(e) => e.stopPropagation()}
             onClick={() => drawRandom(false)}
             title={`Витягнути карту долілиць із колоди «${activeDeck.name}»`}
           >
@@ -816,13 +820,14 @@ export default function Table() {
           <>
             <button
               className="deck-tray-toggle"
+              onPointerDown={(e) => e.stopPropagation()}
               onClick={() => setTrayOpen((o) => !o)}
               title={trayOpen ? 'Сховати колоди' : 'Показати колоди'}
             >
               {trayOpen ? '›' : '‹'}
             </button>
             {trayOpen && (
-              <div className="deck-tray">
+              <div className="deck-tray" onPointerDown={(e) => e.stopPropagation()}>
                 {decks.map((d) => (
                   <button
                     key={d.id}
