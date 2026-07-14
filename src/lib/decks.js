@@ -135,6 +135,12 @@ export async function renameDeck(deckId, name) {
   if (error) throw error;
 }
 
+export async function updateDeckDescription(deckId, description) {
+  const { error } = await supabase
+    .from('decks').update({ description }).eq('id', deckId);
+  if (error) throw error;
+}
+
 // Переставляє колоду на позицію вище/нижче серед власних колод користувача.
 // Нормалізує sort усіх власних колод за поточним порядком показу.
 export async function reorderDeck(customDecks, deckId, direction) {

@@ -31,6 +31,23 @@ function shuffle(arr) {
   return a;
 }
 
+// Інваріант: одна cardId не може бути одночасно і в колоді, і на столі,
+// і не може дублюватися всередині колоди. Прибирає такі колізії —
+// це головний захист від «клонів» карт через гонку realtime-подій.
+function pilesWithoutTable(piles, tableCards) {
+  const onTable = new Set(tableCards.map((c) => c.cardId));
+  const out = {};
+  for (const [deckId, ids] of Object.entries(piles || {})) {
+    const seen = new Set();
+    out[deckId] = ids.filter((id) => {
+      if (onTable.has(id) || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }
+  return out;
+}
+
 export default function Table() {
   const { sessionId: code } = useParams();
   const location = useLocation();
@@ -49,6 +66,7 @@ export default function Table() {
   const [selected, setSelected] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerMode, setPickerMode] = useState('open'); // 'open' | 'blind'
+  const [blindOrder, setBlindOrder] = useState([]); // перемішаний порядок карт для «наосліп»
   const [pickMenuOpen, setPickMenuOpen] = useState(false);
   const [people, setPeople] = useState([]);
   const [copied, setCopied] = useState(false);
@@ -81,7 +99,18 @@ export default function Table() {
   const dragRef = useRef(null);
   const lastSentRef = useRef(0);
   const pickMenuRef = useRef(null);
+  const tableRef = useRef([]);              // актуальний table для async-обробників
+  const deletedCardRef = useRef(new Map()); // uid → час, до якого ігноруємо «воскресіння»
   const [canvasSize, setCanvasSize] = useState({ w: 1, h: 1 });
+
+  // Тримаємо tableRef синхронізованим — realtime-обробники читають його
+  useEffect(() => { tableRef.current = table; }, [table]);
+
+  function markCardDeleted(uid) {
+    const m = deletedCardRef.current;
+    m.set(uid, Date.now() + 6000);
+    for (const [k, exp] of m) if (exp < Date.now()) m.delete(k);
+  }
 
   // Закрити випадне меню «Обрати картку» при кліку поза ним
   useEffect(() => {
@@ -164,17 +193,36 @@ export default function Table() {
           annMaxZRef.current = anns.reduce((m, a) => Math.max(m, a.z), 1);
 
           unsubDb = subscribeToSession(s, {
-            onCardUpsert: (tc) =>
+            onCardUpsert: (tc) => {
+              // Delete-wins: якщо ми щойно видалили цю карту, а до нас
+              // долетів запізнілий upsert від співрозмовника — не воскрешаємо,
+              // а дочищаємо рядок у БД.
+              const exp = deletedCardRef.current.get(tc.uid);
+              if (exp && exp > Date.now()) {
+                deleteCard(tc.uid);
+                return;
+              }
               setTable((t) => {
+                // та сама cardId уже на столі під іншим uid → це клон, ігноруємо
+                const dupe = t.find((c) => c.cardId === tc.cardId && c.uid !== tc.uid);
+                if (dupe) return t;
                 const i = t.findIndex((c) => c.uid === tc.uid);
-                if (i === -1) return [...t, tc];
-                const copy = [...t];
-                copy[i] = tc;
-                return copy;
-              }),
-            onCardDelete: (uid) => setTable((t) => t.filter((c) => c.uid !== uid)),
-            onPileChange: (p2) =>
-              setPiles(Array.isArray(p2) ? { [s.deck_id]: p2 } : p2 || {}),
+                const next = i === -1 ? [...t, tc] : t.map((c) => (c.uid === tc.uid ? tc : c));
+                return next;
+              });
+              // карта на столі не може лишатися і в колоді
+              setPiles((p) => pilesWithoutTable(p, [...tableRef.current, tc]));
+            },
+            onCardDelete: (uid) => {
+              // якщо ми зараз тягнемо саме цю карту — припиняємо жест,
+              // щоб наші pointermove не воскресили її назад
+              if (dragRef.current?.uid === uid) dragRef.current = null;
+              setTable((t) => t.filter((c) => c.uid !== uid));
+            },
+            onPileChange: (p2) => {
+              const raw = Array.isArray(p2) ? { [s.deck_id]: p2 } : p2 || {};
+              setPiles(pilesWithoutTable(raw, tableRef.current));
+            },
             onAnnUpsert: (a) =>
               setAnnotations((list) => {
                 const i = list.findIndex((x) => x.uid === a.uid);
@@ -260,6 +308,8 @@ export default function Table() {
 
   // ==== Дії ====
   function placeCard(cardId, faceUp) {
+    // не викладаємо карту, яка вже лежить на столі (захист від подвійного кліку/гонки)
+    if (table.some((c) => c.cardId === cardId)) return;
     const jitterX = (Math.random() - 0.5) * 0.15;
     const jitterY = (Math.random() - 0.5) * 0.15;
     const tc = {
@@ -302,6 +352,9 @@ export default function Table() {
 
   function openPicker(mode) {
     setPickerMode(mode);
+    // «наосліп» — щоразу перемішуємо порядок, щоб позиції/номери карт
+    // не збігалися з попереднім разом і не були передбачуваними
+    if (mode === 'blind') setBlindOrder(shuffle(activePile));
     setPickerOpen(true);
     setPickMenuOpen(false);
   }
@@ -322,12 +375,17 @@ export default function Table() {
     if (!tc) return;
     const home = cardIndex[tc.cardId]?.deck.id;
     setTable((t) => t.filter((c) => c.uid !== uid));
-    const newPiles = home
-      ? { ...piles, [home]: [...(piles[home] || []), tc.cardId] }
-      : piles;
+    let newPiles = piles;
+    if (home) {
+      const arr = (piles[home] || []).filter((id) => id !== tc.cardId);
+      // повертаємо карту у випадкову позицію колоди, а не в кінець
+      arr.splice(Math.floor(Math.random() * (arr.length + 1)), 0, tc.cardId);
+      newPiles = { ...piles, [home]: arr };
+    }
     setPiles(newPiles);
     if (selected === uid) setSelected(null);
     if (shared) {
+      markCardDeleted(uid); // захист від запізнілого upsert від співрозмовника
       deleteCard(uid);
       updatePile(session.id, newPiles);
     }
@@ -1092,7 +1150,10 @@ export default function Table() {
               <button className="modal-close" onClick={() => setPickerOpen(false)}>✕</button>
             </div>
             <div className="picker-grid">
-              {activePile.map((id, idx) => {
+              {(pickerMode === 'blind'
+                ? blindOrder.filter((id) => activePile.includes(id))
+                : activePile
+              ).map((id, idx) => {
                 const entry = cardIndex[id];
                 if (!entry) return null;
                 return (

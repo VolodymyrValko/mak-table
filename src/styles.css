@@ -298,6 +298,30 @@ body {
   color: var(--text-muted);
   font-size: 0.9rem;
 }
+.deck-desc-editable {
+  cursor: pointer;
+}
+.deck-desc-editable:hover {
+  color: var(--text);
+}
+.deck-edit-inline {
+  opacity: 0.5;
+  font-size: 0.8rem;
+}
+.deck-desc-add {
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+.deck-desc-input {
+  font: inherit;
+  font-size: 0.9rem;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  resize: vertical;
+  margin-top: 4px;
+}
 .deck-builtin-tag {
   color: var(--text-muted);
   font-size: 0.85rem;

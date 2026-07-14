@@ -1,12 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
-import { loadAllDecks, createDeck, deleteDeck, renameDeck, reorderDeck } from '../lib/decks.js';
+import {
+  loadAllDecks, createDeck, deleteDeck, renameDeck, reorderDeck, updateDeckDescription,
+} from '../lib/decks.js';
 
 export default function Decks() {
   const [decks, setDecks] = useState(null);
   const [error, setError] = useState(null);
   const [editingId, setEditingId] = useState(null);
+  const [editingDescId, setEditingDescId] = useState(null);
 
   const [name, setName] = useState('');
   const [files, setFiles] = useState([]); // [{file, url}]
@@ -96,6 +99,18 @@ export default function Decks() {
     }
   }
 
+  async function handleDescription(deck, value) {
+    setEditingDescId(null);
+    const trimmed = value.trim();
+    if (trimmed === (deck.description || '')) return;
+    try {
+      await updateDeckDescription(deck.id, trimmed);
+      await refresh();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
   async function handleMove(deck, direction) {
     try {
       await reorderDeck(customDecks, deck.id, direction);
@@ -178,7 +193,31 @@ export default function Decks() {
                     )}
                   </span>
                 )}
-                {d.description && <p className="deck-desc">{d.description}</p>}
+                {editingDescId === d.id ? (
+                  <textarea
+                    className="deck-desc-input"
+                    defaultValue={d.description || ''}
+                    placeholder="Опис колоди (необовʼязково)"
+                    autoFocus
+                    maxLength={300}
+                    rows={2}
+                    onFocus={(e) => e.target.select()}
+                    onBlur={(e) => handleDescription(d, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') setEditingDescId(null);
+                    }}
+                  />
+                ) : d.custom ? (
+                  <p className="deck-desc deck-desc-editable" onClick={() => setEditingDescId(d.id)}>
+                    {d.description ? (
+                      <>{d.description} <span className="deck-edit-inline">✏️</span></>
+                    ) : (
+                      <span className="deck-desc-add">+ додати опис</span>
+                    )}
+                  </p>
+                ) : (
+                  d.description && <p className="deck-desc">{d.description}</p>
+                )}
               </div>
               {d.custom ? (
                 <button className="btn btn-delete" onClick={() => handleDelete(d)}>
