@@ -12,7 +12,7 @@ import {
 const STORAGE_KEY = 'mak-table-all-v3';
 const CARD_W = 130;
 const CARD_H = 195;
-const PALETTE = ['#e74c3c', '#e67e22', '#f1c40f', '#27ae60', '#2980b9', '#8e44ad', '#1a1a1a', '#ffffff'];
+const PALETTE = ['#e74c3c', '#e67e22', '#f1c40f', '#27ae60', '#2980b9', '#8e44ad', '#00bcd4', '#ff6fa5', '#1a1a1a', '#ffffff'];
 
 function hexToRgba(hex, alpha = 1) {
   if (!hex) return null;
@@ -278,7 +278,11 @@ export default function Table() {
     const cardId = activePile[Math.floor(Math.random() * activePile.length)];
     placeCard(cardId, faceUp);
   }
-  const pickCard = (cardId) => { setPickerOpen(false); placeCard(cardId, true); };
+  const pickCard = (cardId) => {
+    setPickerOpen(false);
+    setTool('select');
+    placeCard(cardId, true);
+  };
 
   function bringToFront(uid) {
     const z = maxZ + 1;
@@ -672,15 +676,6 @@ export default function Table() {
           </button>
         </div>
         <div className="swatch-grid">
-          {colorTarget === 'outline' && (
-            <button
-              className={`swatch swatch-none ${!activeSwatchColor ? 'is-active' : ''}`}
-              onClick={clearOutline}
-              title="Без контуру"
-            >
-              ✕
-            </button>
-          )}
           {PALETTE.map((c) => (
             <button
               key={c}
@@ -690,6 +685,15 @@ export default function Table() {
               title={c}
             />
           ))}
+          {colorTarget === 'outline' && (
+            <button
+              className={`swatch swatch-none ${!activeSwatchColor ? 'is-active' : ''}`}
+              onClick={clearOutline}
+              title="Без контуру"
+            >
+              ✕
+            </button>
+          )}
         </div>
         <input
           type="range"

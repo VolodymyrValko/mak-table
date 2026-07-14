@@ -285,7 +285,9 @@ body {
   z-index: 100;
   display: flex;
   align-items: center;
-  gap: 16px;
+  flex-wrap: wrap;
+  gap: 10px;
+  row-gap: 8px;
   padding: 10px 16px;
   background: rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(4px);
@@ -773,7 +775,7 @@ body {
   background: rgba(10, 14, 28, 0.72);
   display: grid;
   place-items: center;
-  z-index: 1000;
+  z-index: 20000; /* понад шаром малювання/тексту (10000+) і шапкою (100) */
   padding: 20px;
 }
 
