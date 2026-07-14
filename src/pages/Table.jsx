@@ -266,6 +266,8 @@ export default function Table() {
     };
     setPiles(newPiles);
     setSelected(tc.uid);
+    setSelectedAnn(null);
+    setTool('select');
     if (shared) {
       upsertCard(tc, session.id);
       updatePile(session.id, newPiles);
@@ -280,7 +282,6 @@ export default function Table() {
   }
   const pickCard = (cardId) => {
     setPickerOpen(false);
-    setTool('select');
     placeCard(cardId, true);
   };
 
@@ -407,6 +408,7 @@ export default function Table() {
     bringToFront(uid);
     setSelected(uid);
     setSelectedAnn(null);
+    setTool('select');
     e.currentTarget.setPointerCapture(e.pointerId);
   }
 
