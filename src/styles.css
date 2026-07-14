@@ -1,3 +1,17 @@
+/* ===== Шрифт, дружній до людей з дислексією (OpenDyslexic, SIL OFL) ===== */
+@font-face {
+  font-family: 'OpenDyslexic';
+  src: url('/fonts/OpenDyslexic-Regular.otf') format('opentype');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'OpenDyslexic';
+  src: url('/fonts/OpenDyslexic-Bold.otf') format('opentype');
+  font-weight: 700;
+  font-display: swap;
+}
+
 /* ===== Базові стилі ===== */
 * {
   margin: 0;
@@ -18,7 +32,7 @@
 }
 
 body {
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: 'OpenDyslexic', 'Segoe UI', system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
   line-height: 1.6;
@@ -225,9 +239,60 @@ body {
   padding: 14px 18px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 14px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+.deck-item-body {
+  flex: 1;
+  min-width: 0;
+}
+.deck-sort-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.deck-sort-btns button {
+  border: none;
+  background: #f0ede2;
+  color: var(--text-muted);
+  width: 24px;
+  height: 20px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 0.65rem;
+  line-height: 1;
+}
+.deck-sort-btns button:hover:not(:disabled) {
+  background: #e2ded0;
+  color: var(--text);
+}
+.deck-sort-btns button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.deck-name-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.deck-edit-btn {
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 0.8rem;
+  opacity: 0.5;
+  padding: 2px;
+}
+.deck-edit-btn:hover {
+  opacity: 1;
+}
+.deck-name-input {
+  font: inherit;
+  font-weight: 700;
+  padding: 4px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  min-width: 200px;
 }
 .deck-desc {
   color: var(--text-muted);
@@ -387,7 +452,7 @@ body {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 100;
+  z-index: 15000; /* понад шаром малювання (9999) і тексту (10000+), під модалками (20000) */
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -534,6 +599,11 @@ body {
 }
 .table-canvas.tool-text {
   cursor: text;
+}
+.table-canvas.tool-delete,
+.table-canvas.tool-delete .table-card,
+.table-canvas.tool-delete .text-ann {
+  cursor: not-allowed;
 }
 
 /* ===== Малювання і текст на столі ===== */
@@ -725,6 +795,39 @@ body {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* Випадне меню «Обрати картку» */
+.pick-menu {
+  position: relative;
+}
+.pick-menu-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  background: rgba(20, 26, 46, 0.97);
+  border-radius: 10px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 210px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 1;
+}
+.pick-menu-dropdown button {
+  border: none;
+  background: transparent;
+  color: #fff;
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: 7px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pick-menu-dropdown button:hover {
+  background: rgba(255, 255, 255, 0.14);
 }
 .btn-table {
   background: rgba(255, 255, 255, 0.12);
@@ -918,6 +1021,7 @@ body {
   gap: 12px;
 }
 .picker-card {
+  position: relative;
   border: none;
   background: none;
   padding: 0;
@@ -926,6 +1030,16 @@ body {
   overflow: hidden;
   aspect-ratio: 2 / 3;
   transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.picker-card-number {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-size: 1.8rem;
+  font-weight: 700;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.6);
 }
 .picker-card:hover {
   transform: translateY(-4px) scale(1.03);
@@ -1003,34 +1117,3 @@ body {
   }
 }
 
-/* ===== Приєднання ===== */
-.join-page {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 24px;
-}
-.join-card {
-  background: #fff;
-  border-radius: 16px;
-  padding: 36px;
-  max-width: 400px;
-  width: 100%;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.08);
-  display: grid;
-  gap: 16px;
-}
-.join-card h1 {
-  font-size: 1.5rem;
-  color: var(--accent);
-}
-.join-card input {
-  padding: 12px 14px;
-  border: 1px solid #d8d4c8;
-  border-radius: 10px;
-  font-size: 1rem;
-}
-.join-card input:focus {
-  outline: 2px solid var(--accent);
-  border-color: transparent;
-}

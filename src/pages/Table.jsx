@@ -48,13 +48,15 @@ export default function Table() {
   const [maxZ, setMaxZ] = useState(1);
   const [selected, setSelected] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerMode, setPickerMode] = useState('open'); // 'open' | 'blind'
+  const [pickMenuOpen, setPickMenuOpen] = useState(false);
   const [people, setPeople] = useState([]);
   const [copied, setCopied] = useState(false);
   const [trayOpen, setTrayOpen] = useState(false);
 
   // Малювання і текст
   const [annotations, setAnnotations] = useState([]);
-  const [tool, setTool] = useState('select'); // 'select' | 'draw' | 'text'
+  const [tool, setTool] = useState('select'); // 'select' | 'draw' | 'text' | 'delete'
   const [selectedAnn, setSelectedAnn] = useState(null);
   const [editingAnn, setEditingAnn] = useState(null);
   const [colorTarget, setColorTarget] = useState('fill'); // 'fill' | 'outline'
@@ -78,7 +80,20 @@ export default function Table() {
   const canvasRef = useRef(null);
   const dragRef = useRef(null);
   const lastSentRef = useRef(0);
+  const pickMenuRef = useRef(null);
   const [canvasSize, setCanvasSize] = useState({ w: 1, h: 1 });
+
+  // Закрити випадне меню «Обрати картку» при кліку поза ним
+  useEffect(() => {
+    if (!pickMenuOpen) return;
+    function onDocClick(e) {
+      if (pickMenuRef.current && !pickMenuRef.current.contains(e.target)) {
+        setPickMenuOpen(false);
+      }
+    }
+    document.addEventListener('pointerdown', onDocClick);
+    return () => document.removeEventListener('pointerdown', onDocClick);
+  }, [pickMenuOpen]);
 
   // Глобальний індекс: id карти → { card, deck }
   const cardIndex = useMemo(() => {
@@ -282,8 +297,14 @@ export default function Table() {
   }
   const pickCard = (cardId) => {
     setPickerOpen(false);
-    placeCard(cardId, true);
+    placeCard(cardId, pickerMode === 'open');
   };
+
+  function openPicker(mode) {
+    setPickerMode(mode);
+    setPickerOpen(true);
+    setPickMenuOpen(false);
+  }
 
   function bringToFront(uid) {
     const z = maxZ + 1;
@@ -399,6 +420,10 @@ export default function Table() {
     // не даємо події дійти до canvas-обробника — інакше, якщо активний
     // інструмент малювання/тексту, клік по картці ще й почне малювати штрих
     e.stopPropagation();
+    if (tool === 'delete') {
+      returnToPile(uid);
+      return;
+    }
     const tc = table.find((c) => c.uid === uid);
     dragRef.current = {
       uid,
@@ -554,6 +579,10 @@ export default function Table() {
     e.stopPropagation();
     e.preventDefault();
     if (editingAnn === uid) return;
+    if (tool === 'delete') {
+      deleteAnn(uid);
+      return;
+    }
     const a = annotations.find((x) => x.uid === uid);
     if (!a) return;
     bringAnnToFront(uid);
@@ -767,27 +796,44 @@ export default function Table() {
           >
             🔤
           </button>
+          <button
+            className={`btn btn-tool ${tool === 'delete' ? 'is-active' : ''}`}
+            onClick={() => { setTool('delete'); setSelected(null); setSelectedAnn(null); }}
+            title="Видаляти об'єкти (картки, малюнки, текст) по одному кліком"
+          >
+            🗑️
+          </button>
         </div>
 
         {renderColorPanel('draw')}
         {renderColorPanel('text')}
 
-        {selectedAnn && (
-          <button className="btn btn-table btn-danger" onClick={() => deleteAnn(selectedAnn)}>
-            🗑 Видалити
-          </button>
-        )}
-
         <div className="table-actions">
-          <button className="btn btn-table" onClick={() => drawRandom(true)} disabled={!activePile.length}>
-            🎴 Витягнути горілиць
-          </button>
-          <button className="btn btn-table" onClick={() => drawRandom(false)} disabled={!activePile.length}>
-            🂠 Витягнути долілиць
-          </button>
-          <button className="btn btn-table" onClick={() => setPickerOpen(true)} disabled={!activePile.length}>
-            👁 Обрати
-          </button>
+          <div className="pick-menu" ref={pickMenuRef}>
+            <button
+              className="btn btn-table"
+              onClick={() => setPickMenuOpen((o) => !o)}
+              disabled={!activePile.length}
+            >
+              🃏 Обрати картку {pickMenuOpen ? '▴' : '▾'}
+            </button>
+            {pickMenuOpen && (
+              <div className="pick-menu-dropdown">
+                <button onClick={() => { drawRandom(true); setPickMenuOpen(false); }}>
+                  🎴 Витягнути горілиць
+                </button>
+                <button onClick={() => { drawRandom(false); setPickMenuOpen(false); }}>
+                  🂠 Витягнути долілиць
+                </button>
+                <button onClick={() => openPicker('open')}>
+                  👁 Обрати відкрито
+                </button>
+                <button onClick={() => openPicker('blind')}>
+                  🙈 Обрати наосліп
+                </button>
+              </div>
+            )}
+          </div>
           <button className="btn btn-table btn-danger" onClick={clearTable} disabled={!table.length && !annotations.length}>
             ✨ Очистити
           </button>
@@ -1039,16 +1085,26 @@ export default function Table() {
         <div className="modal-overlay" onClick={() => setPickerOpen(false)}>
           <div className="picker-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-title-row">
-              <h2>Оберіть карту · {activeDeck.name}</h2>
+              <h2>
+                Оберіть карту · {activeDeck.name}
+                {pickerMode === 'blind' ? ' (наосліп)' : ''}
+              </h2>
               <button className="modal-close" onClick={() => setPickerOpen(false)}>✕</button>
             </div>
             <div className="picker-grid">
-              {activePile.map((id) => {
+              {activePile.map((id, idx) => {
                 const entry = cardIndex[id];
                 if (!entry) return null;
                 return (
                   <button key={id} className="picker-card" onClick={() => pickCard(id)}>
-                    <img src={entry.card.image} alt={entry.card.name} loading="lazy" />
+                    {pickerMode === 'blind' ? (
+                      <>
+                        <img src={activeDeck.back} alt={`Карта ${idx + 1}`} loading="lazy" />
+                        <span className="picker-card-number">{idx + 1}</span>
+                      </>
+                    ) : (
+                      <img src={entry.card.image} alt={entry.card.name} loading="lazy" />
+                    )}
                   </button>
                 );
               })}

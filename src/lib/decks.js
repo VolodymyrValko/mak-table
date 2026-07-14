@@ -57,7 +57,8 @@ export async function loadAllDecks() {
   try {
     const { data, error } = await supabase
       .from('decks')
-      .select('id, name, description, created_at')
+      .select('id, name, description, sort, created_at')
+      .order('sort', { ascending: true, nullsFirst: false })
       .order('created_at', { ascending: false });
     if (error) throw error;
     const custom = (data || []).map((d) => ({ ...d, custom: true }));
@@ -127,6 +128,26 @@ export async function createDeck({ name, description, files, cardNames }, onProg
     await deleteDeck(deck.id).catch(() => {});
     throw e;
   }
+}
+
+export async function renameDeck(deckId, name) {
+  const { error } = await supabase.from('decks').update({ name }).eq('id', deckId);
+  if (error) throw error;
+}
+
+// Переставляє колоду на позицію вище/нижче серед власних колод користувача.
+// Нормалізує sort усіх власних колод за поточним порядком показу.
+export async function reorderDeck(customDecks, deckId, direction) {
+  const idx = customDecks.findIndex((d) => d.id === deckId);
+  const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (idx === -1 || swapIdx < 0 || swapIdx >= customDecks.length) return;
+
+  const sorts = customDecks.map((_, i) => i);
+  [sorts[idx], sorts[swapIdx]] = [sorts[swapIdx], sorts[idx]];
+
+  await Promise.all(
+    customDecks.map((d, i) => supabase.from('decks').update({ sort: sorts[i] }).eq('id', d.id))
+  );
 }
 
 export async function deleteDeck(deckId) {

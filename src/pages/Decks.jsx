@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
-import { loadAllDecks, createDeck, deleteDeck } from '../lib/decks.js';
+import { loadAllDecks, createDeck, deleteDeck, renameDeck, reorderDeck } from '../lib/decks.js';
 
 export default function Decks() {
   const [decks, setDecks] = useState(null);
   const [error, setError] = useState(null);
+  const [editingId, setEditingId] = useState(null);
 
   const [name, setName] = useState('');
   const [files, setFiles] = useState([]); // [{file, url}]
@@ -83,6 +84,27 @@ export default function Decks() {
     }
   }
 
+  async function handleRename(deck, value) {
+    setEditingId(null);
+    const trimmed = value.trim();
+    if (!trimmed || trimmed === deck.name) return;
+    try {
+      await renameDeck(deck.id, trimmed);
+      await refresh();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
+  async function handleMove(deck, direction) {
+    try {
+      await reorderDeck(customDecks, deck.id, direction);
+      await refresh();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+
   if (!supabase) {
     return (
       <div className="decks-page">
@@ -91,6 +113,8 @@ export default function Decks() {
       </div>
     );
   }
+
+  const customDecks = decks?.filter((d) => d.custom) || [];
 
   return (
     <div className="decks-page">
@@ -103,21 +127,69 @@ export default function Decks() {
 
       <section className="deck-list">
         {decks === null && <p>Завантаження…</p>}
-        {decks?.map((d) => (
-          <div key={d.id} className="deck-item">
-            <div>
-              <strong>{d.name}</strong>
-              {d.description && <p className="deck-desc">{d.description}</p>}
+        {decks?.map((d) => {
+          const customIdx = customDecks.findIndex((x) => x.id === d.id);
+          return (
+            <div key={d.id} className="deck-item">
+              {d.custom && (
+                <div className="deck-sort-btns">
+                  <button
+                    disabled={customIdx <= 0}
+                    onClick={() => handleMove(d, 'up')}
+                    title="Пересунути вище"
+                  >
+                    ▲
+                  </button>
+                  <button
+                    disabled={customIdx === -1 || customIdx >= customDecks.length - 1}
+                    onClick={() => handleMove(d, 'down')}
+                    title="Пересунути нижче"
+                  >
+                    ▼
+                  </button>
+                </div>
+              )}
+              <div className="deck-item-body">
+                {editingId === d.id ? (
+                  <input
+                    type="text"
+                    className="deck-name-input"
+                    defaultValue={d.name}
+                    autoFocus
+                    maxLength={60}
+                    onFocus={(e) => e.target.select()}
+                    onBlur={(e) => handleRename(d, e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') setEditingId(null);
+                      if (e.key === 'Enter') e.target.blur();
+                    }}
+                  />
+                ) : (
+                  <span className="deck-name-row">
+                    <strong>{d.name}</strong>
+                    {d.custom && (
+                      <button
+                        className="deck-edit-btn"
+                        title="Перейменувати колоду"
+                        onClick={() => setEditingId(d.id)}
+                      >
+                        ✏️
+                      </button>
+                    )}
+                  </span>
+                )}
+                {d.description && <p className="deck-desc">{d.description}</p>}
+              </div>
+              {d.custom ? (
+                <button className="btn btn-delete" onClick={() => handleDelete(d)}>
+                  Видалити
+                </button>
+              ) : (
+                <span className="deck-builtin-tag">вбудована</span>
+              )}
             </div>
-            {d.custom ? (
-              <button className="btn btn-delete" onClick={() => handleDelete(d)}>
-                Видалити
-              </button>
-            ) : (
-              <span className="deck-builtin-tag">вбудована</span>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </section>
 
       <section className="deck-create">
