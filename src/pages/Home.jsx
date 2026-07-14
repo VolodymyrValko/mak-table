@@ -33,10 +33,10 @@ export default function Home() {
   return (
     <div className="home">
       <header className="home-hero">
-        <h1>МАК-стіл</h1>
+        <h1>МАК-<span className="accent">стіл</span></h1>
         <p className="home-tagline">
-          Онлайн-простір для роботи з метафоричними асоціативними картками —
-          наодинці або разом із психологом.
+          Тихий простір для роботи з метафоричними асоціативними картками —
+          розкладайте образи, вдивляйтесь, ведіть діалог із собою чи з психологом.
         </p>
 
         <div className="home-cta">
@@ -64,6 +64,14 @@ export default function Home() {
           </div>
         )}
         {error && <p className="home-error">{error}</p>}
+
+        <div className="hero-cards" aria-hidden="true">
+          <div className="hc hc-1" style={{ backgroundImage: 'url(/decks/nature/cards/card-05.jpg)' }} />
+          <div className="hc hc-2" style={{ backgroundImage: 'url(/decks/nature/cards/card-02.jpg)' }} />
+          <div className="hc hc-3" style={{ backgroundImage: 'url(/decks/nature/cards/card-10.jpg)' }} />
+          <div className="hc hc-4" style={{ backgroundImage: 'url(/decks/nature/cards/card-21.jpg)' }} />
+          <div className="hc hc-5" style={{ backgroundImage: 'url(/decks/nature/cards/card-03.jpg)' }} />
+        </div>
       </header>
 
       <section className="home-steps">
