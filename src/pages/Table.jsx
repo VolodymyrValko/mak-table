@@ -50,7 +50,7 @@ export default function Table() {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [people, setPeople] = useState([]);
   const [copied, setCopied] = useState(false);
-  const [trayOpen, setTrayOpen] = useState(true);
+  const [trayOpen, setTrayOpen] = useState(false);
 
   // Малювання і текст
   const [annotations, setAnnotations] = useState([]);

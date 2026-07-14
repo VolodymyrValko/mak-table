@@ -54,7 +54,7 @@ export async function updatePile(sessionId, pile) {
 export async function listSessions() {
   const { data, error } = await supabase
     .from('sessions')
-    .select('id, code, deck_id, status, created_at')
+    .select('id, code, deck_id, status, name, created_at')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return data;
@@ -73,6 +73,19 @@ export async function reactivateSession(sessionId) {
     .from('sessions')
     .update({ status: 'active' })
     .eq('id', sessionId);
+  if (error) throw error;
+}
+
+export async function renameSession(sessionId, name) {
+  const { error } = await supabase
+    .from('sessions')
+    .update({ name })
+    .eq('id', sessionId);
+  if (error) throw error;
+}
+
+export async function deleteSessionForever(sessionId) {
+  const { error } = await supabase.from('sessions').delete().eq('id', sessionId);
   if (error) throw error;
 }
 

@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
-import { listSessions, endSession, reactivateSession } from '../lib/session.js';
+import {
+  listSessions, endSession, reactivateSession, renameSession, deleteSessionForever,
+} from '../lib/session.js';
 import { loadAllDecks } from '../lib/decks.js';
 
 function formatDate(iso) {
@@ -16,6 +18,7 @@ export default function Sessions() {
   const [deckNames, setDeckNames] = useState({});
   const [tab, setTab] = useState('active'); // 'active' | 'inactive'
   const [error, setError] = useState(null);
+  const [editingId, setEditingId] = useState(null);
 
   async function refresh() {
     try {
@@ -41,6 +44,20 @@ export default function Sessions() {
 
   async function handleReactivate(s) {
     await reactivateSession(s.id);
+    refresh();
+  }
+
+  async function handleDelete(s) {
+    if (!window.confirm('Видалити сесію назавжди? Усі карти, малюнки й нотатки буде втрачено безповоротно.')) return;
+    await deleteSessionForever(s.id);
+    refresh();
+  }
+
+  async function handleRename(s, value) {
+    setEditingId(null);
+    const name = value.trim();
+    if (name === (s.name || '')) return;
+    await renameSession(s.id, name || null);
     refresh();
   }
 
@@ -92,7 +109,33 @@ export default function Sessions() {
         {filtered?.map((s) => (
           <div key={s.id} className="session-item">
             <div className="session-info">
-              <strong>{deckNames[s.deck_id] || 'Невідома колода'}</strong>
+              {editingId === s.id ? (
+                <input
+                  type="text"
+                  className="session-name-input"
+                  defaultValue={s.name || deckNames[s.deck_id] || ''}
+                  placeholder="Назва сесії"
+                  autoFocus
+                  maxLength={80}
+                  onFocus={(e) => e.target.select()}
+                  onBlur={(e) => handleRename(s, e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') setEditingId(null);
+                    if (e.key === 'Enter') e.target.blur();
+                  }}
+                />
+              ) : (
+                <span className="session-name-row">
+                  <strong>{s.name || deckNames[s.deck_id] || 'Невідома колода'}</strong>
+                  <button
+                    className="session-edit-btn"
+                    title="Перейменувати сесію"
+                    onClick={() => setEditingId(s.id)}
+                  >
+                    ✏️
+                  </button>
+                </span>
+              )}
               <span className="session-meta">
                 Код: {s.code} · {formatDate(s.created_at)}
               </span>
@@ -109,9 +152,14 @@ export default function Sessions() {
                   Завершити
                 </button>
               ) : (
-                <button className="btn btn-ghost" onClick={() => handleReactivate(s)}>
-                  Відновити
-                </button>
+                <>
+                  <button className="btn btn-ghost" onClick={() => handleReactivate(s)}>
+                    Відновити
+                  </button>
+                  <button className="btn btn-delete" onClick={() => handleDelete(s)}>
+                    Видалити назавжди
+                  </button>
+                </>
               )}
             </div>
           </div>
