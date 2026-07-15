@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
 import {
-  listSessions, endSession, reactivateSession, renameSession, deleteSessionForever,
+  listSessions, saveSession, renameSession, deleteSessionForever, daysUntilExpiry,
 } from '../lib/session.js';
 import { loadAllDecks } from '../lib/decks.js';
 import { PillNav, SkeletonRows, BackgroundShapes } from '../components/ui.jsx';
+import { IconPencil, IconBookmark, IconTrash, IconClock, IconChevronLeft } from '../components/Icons.jsx';
 
 function formatDate(iso) {
   return new Date(iso).toLocaleString('uk-UA', {
@@ -17,7 +18,7 @@ export default function Sessions() {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState(null);
   const [deckNames, setDeckNames] = useState({});
-  const [tab, setTab] = useState('active'); // 'active' | 'inactive'
+  const [tab, setTab] = useState('active'); // 'active' | 'saved'
   const [error, setError] = useState(null);
   const [editingId, setEditingId] = useState(null);
 
@@ -37,14 +38,8 @@ export default function Sessions() {
     refresh();
   }, []);
 
-  async function handleEnd(s) {
-    if (!window.confirm('Позначити сесію завершеною? Її й далі можна буде відкрити.')) return;
-    await endSession(s.id);
-    refresh();
-  }
-
-  async function handleReactivate(s) {
-    await reactivateSession(s.id);
+  async function handleSave(s) {
+    await saveSession(s.id);
     refresh();
   }
 
@@ -67,14 +62,12 @@ export default function Sessions() {
       <div className="sessions-page">
         <PillNav />
         <p>Список сесій недоступний: бекенд не налаштований.</p>
-        <Link to="/">← На головну</Link>
+        <Link to="/"><IconChevronLeft size={14} /> На головну</Link>
       </div>
     );
   }
 
-  const filtered = sessions?.filter((s) =>
-    tab === 'active' ? s.status === 'active' : s.status !== 'active'
-  );
+  const filtered = sessions?.filter((s) => (tab === 'active' ? !s.saved : s.saved));
 
   return (
     <div className="sessions-page">
@@ -85,13 +78,13 @@ export default function Sessions() {
         <h1>Спільні сесії</h1>
       </header>
       <p className="page-sub">
-        Кожна сесія — окремий спільний стіл. Поділіться кодом чи посиланням,
-        щоб працювати з кимось у реальному часі.
+        Кожна сесія — окремий спільний стіл. Активні зникають через 7 днів,
+        якщо їх не зберегти, — збережені лишаються назавжди.
       </p>
 
       <div className="sessions-tabs">
         <span
-          className={`tab-indicator ${tab === 'inactive' ? 'pos-1' : ''}`}
+          className={`tab-indicator ${tab === 'saved' ? 'pos-1' : ''}`}
           aria-hidden="true"
         />
         <button
@@ -101,10 +94,10 @@ export default function Sessions() {
           Активні
         </button>
         <button
-          className={tab === 'inactive' ? 'is-active' : ''}
-          onClick={() => setTab('inactive')}
+          className={tab === 'saved' ? 'is-active' : ''}
+          onClick={() => setTab('saved')}
         >
-          Неактивні
+          Збережені
         </button>
       </div>
 
@@ -113,7 +106,7 @@ export default function Sessions() {
 
       {sessions && filtered.length === 0 && (
         <p className="sessions-empty">
-          {tab === 'active' ? 'Активних сесій поки немає.' : 'Неактивних сесій немає.'}
+          {tab === 'active' ? 'Активних сесій поки немає.' : 'Збережених сесій немає.'}
         </p>
       )}
 
@@ -144,13 +137,21 @@ export default function Sessions() {
                     title="Перейменувати сесію"
                     onClick={() => setEditingId(s.id)}
                   >
-                    ✏️
+                    <IconPencil size={13} />
                   </button>
                 </span>
               )}
               <span className="session-meta">
                 <span className="session-code-chip">{s.code}</span>
                 {formatDate(s.created_at)}
+                {!s.saved && (
+                  <span className="session-expiry">
+                    <IconClock size={12} />
+                    {daysUntilExpiry(s.created_at) === 0
+                      ? 'спливає сьогодні'
+                      : `спливає через ${daysUntilExpiry(s.created_at)} дн.`}
+                  </span>
+                )}
               </span>
             </div>
             <div className="session-actions">
@@ -160,20 +161,16 @@ export default function Sessions() {
               >
                 Приєднатися
               </button>
-              {tab === 'active' ? (
-                <button className="btn btn-ghost" onClick={() => handleEnd(s)}>
-                  Завершити
+              {!s.saved && (
+                <button className="btn btn-ghost" onClick={() => handleSave(s)} title="Зберегти назавжди">
+                  <IconBookmark size={16} />
+                  Зберегти
                 </button>
-              ) : (
-                <>
-                  <button className="btn btn-ghost" onClick={() => handleReactivate(s)}>
-                    Відновити
-                  </button>
-                  <button className="btn btn-delete" onClick={() => handleDelete(s)}>
-                    Видалити назавжди
-                  </button>
-                </>
               )}
+              <button className="btn btn-delete" onClick={() => handleDelete(s)} title="Видалити назавжди">
+                <IconTrash size={16} />
+                Видалити
+              </button>
             </div>
           </div>
         ))}

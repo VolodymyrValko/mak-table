@@ -50,28 +50,37 @@ export async function updatePile(sessionId, pile) {
   await supabase.from('sessions').update({ pile }).eq('id', sessionId);
 }
 
+const EXPIRY_DAYS = 7;
+
+// Прибирає активні (незбережені) сесії, старші за 7 днів.
+// Викликається лінькво — при кожному завантаженні списку сесій,
+// бо на цьому хостингу немає серверного крону.
+export async function pruneExpiredSessions() {
+  const cutoff = new Date(Date.now() - EXPIRY_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  await supabase.from('sessions').delete().eq('saved', false).lt('created_at', cutoff);
+}
+
 // Список усіх сесій — для сторінки вибору, з ким приєднатись
 export async function listSessions() {
+  await pruneExpiredSessions();
   const { data, error } = await supabase
     .from('sessions')
-    .select('id, code, deck_id, status, name, created_at')
+    .select('id, code, deck_id, saved, name, created_at')
     .order('created_at', { ascending: false });
   if (error) throw error;
   return data;
 }
 
-export async function endSession(sessionId) {
-  const { error } = await supabase
-    .from('sessions')
-    .update({ status: 'ended' })
-    .eq('id', sessionId);
-  if (error) throw error;
+export function daysUntilExpiry(createdAt) {
+  const ageMs = Date.now() - new Date(createdAt).getTime();
+  const daysLeft = EXPIRY_DAYS - ageMs / (24 * 60 * 60 * 1000);
+  return Math.max(0, Math.ceil(daysLeft));
 }
 
-export async function reactivateSession(sessionId) {
+export async function saveSession(sessionId) {
   const { error } = await supabase
     .from('sessions')
-    .update({ status: 'active' })
+    .update({ saved: true })
     .eq('id', sessionId);
   if (error) throw error;
 }

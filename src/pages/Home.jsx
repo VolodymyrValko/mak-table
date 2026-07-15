@@ -46,7 +46,7 @@ export default function Home() {
 
         <div className="home-cta">
           <Link to="/table" className="btn btn-primary btn-lg">
-            Відкрити стіл
+            Одиночний стіл
           </Link>
           {supabase && (
             <button
