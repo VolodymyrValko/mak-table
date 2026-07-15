@@ -1,0 +1,23 @@
+name: Keep Supabase awake
+
+# Supabase призупиняє безкоштовні проєкти після ~7 днів без запитів.
+# Цей воркфлоу раз на кілька днів робить легкий запит до бази,
+# щоб проєкт лишався активним без ручного втручання.
+#
+# URL і anon-ключ тут не секрети: це публічний ключ, що й так
+# вшитий у зібраний JS сайту (видимий будь-кому у браузері).
+
+on:
+  schedule:
+    - cron: '0 6 */3 * *'  # кожні 3 дні о 06:00 UTC
+  workflow_dispatch:        # можна запустити вручну з вкладки Actions
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST API
+        run: |
+          curl -sf -o /dev/null -w "Supabase відповів: %{http_code}\n" \
+            "https://dhngsymwlmbcumewtgqo.supabase.co/rest/v1/decks?select=id&limit=1" \
+            -H "apikey: sb_publishable_QmeppwFzrZ2LFbcTsr6pUA_wxiMCzOV"
