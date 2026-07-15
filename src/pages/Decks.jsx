@@ -5,6 +5,9 @@ import {
   loadAllDecks, createDeck, deleteDeck, renameDeck, reorderDeck, updateDeckDescription,
 } from '../lib/decks.js';
 import { PillNav, SkeletonRows, BackgroundShapes } from '../components/ui.jsx';
+import {
+  IconChevronUp, IconChevronDown, IconChevronLeft, IconPencil, IconX, IconFolderOpen,
+} from '../components/Icons.jsx';
 
 export default function Decks() {
   const [decks, setDecks] = useState(null);
@@ -126,7 +129,7 @@ export default function Decks() {
       <div className="decks-page">
         <PillNav />
         <p>Власні колоди недоступні: бекенд не налаштований.</p>
-        <Link to="/">← На головну</Link>
+        <Link to="/"><IconChevronLeft size={14} /> На головну</Link>
       </div>
     );
   }
@@ -161,14 +164,14 @@ export default function Decks() {
                     onClick={() => handleMove(d, 'up')}
                     title="Пересунути вище"
                   >
-                    ▲
+                    <IconChevronUp size={12} />
                   </button>
                   <button
                     disabled={customIdx === -1 || customIdx >= customDecks.length - 1}
                     onClick={() => handleMove(d, 'down')}
                     title="Пересунути нижче"
                   >
-                    ▼
+                    <IconChevronDown size={12} />
                   </button>
                 </div>
               )}
@@ -196,7 +199,7 @@ export default function Decks() {
                         title="Перейменувати колоду"
                         onClick={() => setEditingId(d.id)}
                       >
-                        ✏️
+                        <IconPencil size={13} />
                       </button>
                     )}
                   </span>
@@ -218,7 +221,7 @@ export default function Decks() {
                 ) : d.custom ? (
                   <p className="deck-desc deck-desc-editable" onClick={() => setEditingDescId(d.id)}>
                     {d.description ? (
-                      <>{d.description} <span className="deck-edit-inline">✏️</span></>
+                      <>{d.description} <span className="deck-edit-inline"><IconPencil size={11} /></span></>
                     ) : (
                       <span className="deck-desc-add">+ додати опис</span>
                     )}
@@ -264,9 +267,14 @@ export default function Decks() {
                 e.target.value = '';
               }}
             />
-            {files.length === 0
-              ? '📂 Перетягніть зображення карток сюди або натисніть, щоб обрати'
-              : `Карток: ${files.length}. Натисніть, щоб додати ще`}
+            {files.length === 0 ? (
+              <span className="dropzone-content">
+                <IconFolderOpen size={22} />
+                Перетягніть зображення карток сюди або натисніть, щоб обрати
+              </span>
+            ) : (
+              `Карток: ${files.length}. Натисніть, щоб додати ще`
+            )}
           </label>
 
           {files.length > 0 && (
@@ -280,7 +288,7 @@ export default function Decks() {
                     title="Прибрати"
                     onClick={() => removeFile(i)}
                   >
-                    ✕
+                    <IconX size={12} />
                   </button>
                 </div>
               ))}

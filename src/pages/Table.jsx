@@ -6,8 +6,14 @@ import {
   fetchSession, fetchTableCards, updatePile, upsertCard, deleteCard,
   deleteAllCards, subscribeToSession, joinPresence, rowToCard,
   fetchAnnotations, upsertAnnotation, deleteAnnotation, deleteAllAnnotations,
-  rowToAnnotation,
+  rowToAnnotation, renameSession,
 } from '../lib/session.js';
+import {
+  IconArrowLeft, IconLink, IconCheck, IconUsers, IconCursor, IconPencil, IconType,
+  IconEraser, IconPalette, IconRing, IconX, IconCards, IconChevronUp, IconChevronDown,
+  IconCardFace, IconCardBack, IconEye, IconEyeOff, IconSparkle, IconPlus,
+  IconChevronLeft, IconChevronRight, IconRotate,
+} from '../components/Icons.jsx';
 
 const STORAGE_KEY = 'mak-table-all-v3';
 const CARD_W = 130;
@@ -71,6 +77,7 @@ export default function Table() {
   const [people, setPeople] = useState([]);
   const [copied, setCopied] = useState(false);
   const [trayOpen, setTrayOpen] = useState(false);
+  const [editingSessionName, setEditingSessionName] = useState(false);
 
   // Малювання і текст
   const [annotations, setAnnotations] = useState([]);
@@ -99,6 +106,7 @@ export default function Table() {
   const dragRef = useRef(null);
   const lastSentRef = useRef(0);
   const pickMenuRef = useRef(null);
+  const sessionNameInputRef = useRef(null);
   const tableRef = useRef([]);              // актуальний table для async-обробників
   const deletedCardRef = useRef(new Map()); // uid → час, до якого ігноруємо «воскресіння»
   const [canvasSize, setCanvasSize] = useState({ w: 1, h: 1 });
@@ -413,6 +421,14 @@ export default function Table() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
+  }
+
+  async function saveSessionName(value) {
+    setEditingSessionName(false);
+    const trimmed = value.trim();
+    if (!session || trimmed === (session.name || '')) return;
+    setSession((s) => ({ ...s, name: trimmed }));
+    await renameSession(session.id, trimmed || null);
   }
 
   // ==== Малювання і текст: спільні хелпери ====
@@ -757,14 +773,14 @@ export default function Table() {
             onClick={() => setColorTarget('fill')}
             title="Колір заливки"
           >
-            🎨
+            <IconPalette size={12} />
           </button>
           <button
             className={colorTarget === 'outline' ? 'is-active' : ''}
             onClick={() => setColorTarget('outline')}
             title="Колір контуру"
           >
-            ⭕
+            <IconRing size={12} />
           </button>
         </div>
         <div className="swatch-grid">
@@ -783,7 +799,7 @@ export default function Table() {
               onClick={clearOutline}
               title="Без контуру"
             >
-              ✕
+              <IconX size={9} />
             </button>
           )}
         </div>
@@ -816,18 +832,61 @@ export default function Table() {
   return (
     <div className="table-page">
       <header className="table-header">
-        <Link to="/" className="btn btn-ghost">←</Link>
+        <Link to="/" className="btn btn-ghost" title="На головну">
+          <IconArrowLeft size={18} />
+        </Link>
 
-        <span className="table-deck-name">{activeDeck.name}</span>
+        {shared ? (
+          editingSessionName ? (
+            <span className="session-name-edit">
+              <input
+                ref={sessionNameInputRef}
+                type="text"
+                className="table-session-name-input"
+                defaultValue={session?.name || activeDeck.name}
+                placeholder="Назва сесії"
+                autoFocus
+                maxLength={80}
+                onFocus={(e) => e.target.select()}
+                onBlur={(e) => saveSessionName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Escape') setEditingSessionName(false);
+                  if (e.key === 'Enter') e.target.blur();
+                }}
+              />
+              <button
+                className="session-name-save"
+                title="Зберегти назву"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => saveSessionName(sessionNameInputRef.current.value)}
+              >
+                <IconCheck size={14} />
+              </button>
+            </span>
+          ) : (
+            <button
+              className="table-deck-name table-session-name"
+              onClick={() => setEditingSessionName(true)}
+              title="Змінити назву сесії"
+            >
+              {session?.name || activeDeck.name}
+              <IconPencil className="session-name-pencil" size={13} />
+            </button>
+          )
+        ) : (
+          <span className="table-deck-name">{activeDeck.name}</span>
+        )}
         <span className="pile-counter">У колоді: {activePile.length}</span>
 
         {shared && (
           <div className="share-block">
             <button className="btn btn-table" onClick={copyLink}>
-              {copied ? '✓ Скопійовано' : '🔗 Запросити'}
+              {copied ? <IconCheck size={15} /> : <IconLink size={15} />}
+              {copied ? 'Скопійовано' : 'Запросити'}
             </button>
             <span className="presence" title={people.join(', ')}>
-              👥 {people.length || 1}
+              <IconUsers size={14} />
+              {people.length || 1}
             </span>
           </div>
         )}
@@ -838,28 +897,28 @@ export default function Table() {
             onClick={() => setTool('select')}
             title="Обрати / перемістити"
           >
-            🖱
+            <IconCursor size={16} />
           </button>
           <button
             className={`btn btn-tool ${tool === 'draw' ? 'is-active' : ''}`}
             onClick={() => { setTool('draw'); setSelected(null); setSelectedAnn(null); }}
             title="Малювати"
           >
-            ✏️
+            <IconPencil size={16} />
           </button>
           <button
             className={`btn btn-tool ${tool === 'text' ? 'is-active' : ''}`}
             onClick={() => { setTool('text'); setSelected(null); setSelectedAnn(null); }}
             title="Додати текст"
           >
-            🔤
+            <IconType size={16} />
           </button>
           <button
             className={`btn btn-tool ${tool === 'delete' ? 'is-active' : ''}`}
             onClick={() => { setTool('delete'); setSelected(null); setSelectedAnn(null); }}
             title="Видаляти об'єкти (картки, малюнки, текст) по одному кліком"
           >
-            🗑️
+            <IconEraser size={16} />
           </button>
         </div>
 
@@ -873,27 +932,30 @@ export default function Table() {
               onClick={() => setPickMenuOpen((o) => !o)}
               disabled={!activePile.length}
             >
-              🃏 Обрати картку {pickMenuOpen ? '▴' : '▾'}
+              <IconCards size={15} />
+              Обрати картку
+              {pickMenuOpen ? <IconChevronUp size={13} /> : <IconChevronDown size={13} />}
             </button>
             {pickMenuOpen && (
               <div className="pick-menu-dropdown">
                 <button onClick={() => { drawRandom(true); setPickMenuOpen(false); }}>
-                  🎴 Витягнути горілиць
+                  <IconCardFace size={15} /> Витягнути горілиць
                 </button>
                 <button onClick={() => { drawRandom(false); setPickMenuOpen(false); }}>
-                  🂠 Витягнути долілиць
+                  <IconCardBack size={15} /> Витягнути долілиць
                 </button>
                 <button onClick={() => openPicker('open')}>
-                  👁 Обрати відкрито
+                  <IconEye size={15} /> Обрати відкрито
                 </button>
                 <button onClick={() => openPicker('blind')}>
-                  🙈 Обрати наосліп
+                  <IconEyeOff size={15} /> Обрати наосліп
                 </button>
               </div>
             )}
           </div>
           <button className="btn btn-table btn-danger" onClick={clearTable} disabled={!table.length && !annotations.length}>
-            ✨ Очистити
+            <IconSparkle size={15} />
+            Очистити
           </button>
         </div>
       </header>
@@ -928,7 +990,7 @@ export default function Table() {
               onClick={() => setTrayOpen((o) => !o)}
               title={trayOpen ? 'Сховати колоди' : 'Показати колоди'}
             >
-              {trayOpen ? '›' : '‹'}
+              {trayOpen ? <IconChevronRight size={16} /> : <IconChevronLeft size={16} />}
             </button>
             {trayOpen && (
               <div className="deck-tray" onPointerDown={(e) => e.stopPropagation()}>
@@ -950,7 +1012,7 @@ export default function Table() {
                     className="deck-tray-item deck-tray-add"
                     title="Додати нову колоду"
                   >
-                    <span className="deck-tray-add-icon">+</span>
+                    <span className="deck-tray-add-icon"><IconPlus size={20} /></span>
                     <span className="deck-tray-name">Нова колода</span>
                   </Link>
                 )}
@@ -998,7 +1060,7 @@ export default function Table() {
                     title="Повернути"
                     onPointerDown={(e) => startGesture(e, tc.uid, 'rotate')}
                   >
-                    ⟳
+                    <IconRotate size={14} />
                   </div>
                   <div
                     className="handle handle-resize"
@@ -1130,7 +1192,7 @@ export default function Table() {
                         setEditingAnn(a.uid);
                       }}
                     >
-                      ✏️
+                      <IconPencil size={12} />
                     </button>
                   )}
                 </>
@@ -1147,7 +1209,7 @@ export default function Table() {
                 Оберіть карту · {activeDeck.name}
                 {pickerMode === 'blind' ? ' (наосліп)' : ''}
               </h2>
-              <button className="modal-close" onClick={() => setPickerOpen(false)}>✕</button>
+              <button className="modal-close" onClick={() => setPickerOpen(false)}><IconX size={15} /></button>
             </div>
             <div className="picker-grid">
               {(pickerMode === 'blind'

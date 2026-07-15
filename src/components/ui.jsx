@@ -1,5 +1,6 @@
 import { Link, useLocation } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
+import { IconCards } from './Icons.jsx';
 
 /* Плаваюча pill-навігація, спільна для світлих сторінок */
 export function PillNav() {
@@ -15,7 +16,7 @@ export function PillNav() {
   ];
   return (
     <nav className="pill-nav" aria-label="Основна навігація">
-      <span className="pill-nav-logo" aria-hidden="true">🎴</span>
+      <span className="pill-nav-logo" aria-hidden="true"><IconCards size={20} /></span>
       {items.map((it) => (
         <Link
           key={it.to}
@@ -26,7 +27,7 @@ export function PillNav() {
         </Link>
       ))}
       <Link to="/table" className="pill-nav-cta">
-        Відкрити стіл
+        Одиночний стіл
       </Link>
     </nav>
   );

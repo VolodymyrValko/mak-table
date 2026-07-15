@@ -28,6 +28,13 @@
   box-sizing: border-box;
 }
 
+/* Лінійні піктограми (src/components/Icons.jsx) — успадковують колір тексту */
+.icon {
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
+}
+
 :root {
   /* нейтральні (світла оболонка) */
   --linen: #f5f5f7;
@@ -214,7 +221,9 @@ h1, h2, h3 {
   to { opacity: 1; transform: translate(-50%, 0); }
 }
 .pill-nav-logo {
-  font-size: 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  color: var(--iris);
   padding: 0 6px 0 10px;
 }
 .pill-nav-link {
@@ -653,6 +662,8 @@ h1, h2, h3 {
 .deck-item-body strong { color: var(--ink); font-size: 1.05rem; }
 .deck-sort-btns { display: flex; flex-direction: column; gap: 3px; }
 .deck-sort-btns button {
+  display: grid;
+  place-items: center;
   border: 1px solid var(--hairline);
   background: var(--linen);
   color: var(--slate);
@@ -660,7 +671,6 @@ h1, h2, h3 {
   height: 21px;
   border-radius: 7px;
   cursor: pointer;
-  font-size: 0.6rem;
   line-height: 1;
   transition: background 0.15s ease, color 0.15s ease;
 }
@@ -797,6 +807,12 @@ h1, h2, h3 {
     var(--linen);
   transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
 }
+.dropzone-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
 .dropzone:hover {
   border-color: var(--iris);
   background: var(--iris-mist);
@@ -820,6 +836,8 @@ h1, h2, h3 {
   position: absolute;
   top: 7px;
   right: 7px;
+  display: grid;
+  place-items: center;
   border: none;
   background: rgba(15, 16, 20, 0.7);
   color: #fff;
@@ -827,7 +845,6 @@ h1, h2, h3 {
   width: 24px;
   height: 24px;
   cursor: pointer;
-  font-size: 0.8rem;
   backdrop-filter: blur(4px);
 }
 .upload-hint { color: var(--slate); font-size: 0.82rem; opacity: 0.85; }
@@ -923,8 +940,21 @@ h1, h2, h3 {
   border-radius: 7px;
   padding: 2px 8px;
 }
+.session-expiry {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #b3651f;
+  background: rgba(255, 128, 64, 0.12);
+  border-radius: 999px;
+  padding: 2px 9px 2px 7px;
+  font-size: 0.76rem;
+}
 .session-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .session-actions .btn-primary { padding: 9px 20px; font-size: 0.88rem; }
+.session-actions .btn { gap: 6px; }
+.session-actions .btn-ghost,
+.session-actions .btn-delete { display: inline-flex; align-items: center; gap: 6px; }
 
 /* ============================================================
    СТІЛ — темна сцена
@@ -995,6 +1025,59 @@ h1, h2, h3 {
   font-weight: 600;
   color: var(--night-text);
   letter-spacing: 0.01em;
+}
+.table-session-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  padding: 4px 8px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.table-session-name:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--night-line-soft);
+}
+.session-name-pencil {
+  opacity: 0.45;
+  flex-shrink: 0;
+}
+.table-session-name:hover .session-name-pencil {
+  opacity: 0.9;
+}
+.session-name-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.table-session-name-input {
+  font-family: var(--font-display);
+  font-size: 1.02rem;
+  font-weight: 600;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--iris);
+  border-radius: 9px;
+  padding: 4px 10px;
+  min-width: 160px;
+}
+.session-name-save {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: var(--iris);
+  color: #fff;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.session-name-save:hover {
+  background: var(--iris-deep);
 }
 
 .table-deck-select {
@@ -1094,13 +1177,14 @@ h1, h2, h3 {
   flex-shrink: 0;
 }
 .target-toggle button {
+  display: grid;
+  place-items: center;
   width: 26px;
   height: 17px;
   border: none;
   border-radius: 5px;
   background: rgba(255, 255, 255, 0.1);
   color: rgba(255, 255, 255, 0.72);
-  font-size: 0.65rem;
   line-height: 1;
   cursor: pointer;
   padding: 0;
@@ -1177,6 +1261,9 @@ h1, h2, h3 {
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
 .pick-menu-dropdown button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   border: none;
   background: transparent;
   color: var(--night-text);
@@ -1188,6 +1275,9 @@ h1, h2, h3 {
   cursor: pointer;
   white-space: nowrap;
   transition: background 0.15s ease, color 0.15s ease;
+}
+.pick-menu-dropdown button .icon {
+  opacity: 0.75;
 }
 .pick-menu-dropdown button:hover {
   background: rgba(99, 102, 241, 0.18);
@@ -1374,11 +1464,12 @@ h1, h2, h3 {
   bottom: 70px;
   width: 28px;
   height: 56px;
+  display: grid;
+  place-items: center;
   border: 1px solid var(--night-line-soft);
   border-radius: 12px;
   background: rgba(0, 0, 0, 0.45);
   color: rgba(233, 233, 242, 0.85);
-  font-size: 1.3rem;
   cursor: pointer;
   z-index: 5;
   backdrop-filter: blur(8px);
@@ -1544,13 +1635,14 @@ h1, h2, h3 {
   color: var(--night-text);
 }
 .modal-close {
+  display: grid;
+  place-items: center;
   border: none;
   background: rgba(255, 255, 255, 0.08);
   color: var(--night-text);
   border-radius: 10px;
   width: 36px;
   height: 36px;
-  font-size: 1rem;
   cursor: pointer;
   transition: background 0.15s ease;
 }
