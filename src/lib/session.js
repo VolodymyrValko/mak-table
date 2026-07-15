@@ -50,6 +50,45 @@ export async function updatePile(sessionId, pile) {
   await supabase.from('sessions').update({ pile }).eq('id', sessionId);
 }
 
+// Список усіх сесій — для сторінки вибору, з ким приєднатись
+export async function listSessions() {
+  const { data, error } = await supabase
+    .from('sessions')
+    .select('id, code, deck_id, status, name, created_at')
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return data;
+}
+
+export async function endSession(sessionId) {
+  const { error } = await supabase
+    .from('sessions')
+    .update({ status: 'ended' })
+    .eq('id', sessionId);
+  if (error) throw error;
+}
+
+export async function reactivateSession(sessionId) {
+  const { error } = await supabase
+    .from('sessions')
+    .update({ status: 'active' })
+    .eq('id', sessionId);
+  if (error) throw error;
+}
+
+export async function renameSession(sessionId, name) {
+  const { error } = await supabase
+    .from('sessions')
+    .update({ name })
+    .eq('id', sessionId);
+  if (error) throw error;
+}
+
+export async function deleteSessionForever(sessionId) {
+  const { error } = await supabase.from('sessions').delete().eq('id', sessionId);
+  if (error) throw error;
+}
+
 // Перетворення: рядок БД ↔ карта на столі
 export function rowToCard(row) {
   return {
@@ -58,6 +97,7 @@ export function rowToCard(row) {
     x: row.x,
     y: row.y,
     rot: row.rot,
+    scale: row.scale ?? 1,
     faceUp: row.face_up,
     z: row.z,
     note: row.note,
@@ -72,6 +112,7 @@ export function cardToRow(tc, sessionId) {
     x: tc.x,
     y: tc.y,
     rot: tc.rot,
+    scale: tc.scale ?? 1,
     face_up: tc.faceUp,
     z: tc.z,
     note: tc.note,
@@ -89,6 +130,66 @@ export async function deleteCard(uid) {
 
 export async function deleteAllCards(sessionId) {
   await supabase.from('table_cards').delete().eq('session_id', sessionId);
+}
+
+// Перетворення: рядок БД ↔ анотація (малюнок або текст) на столі
+export function rowToAnnotation(row) {
+  return {
+    uid: row.id,
+    kind: row.kind,
+    points: row.points,
+    text: row.text,
+    x: row.x,
+    y: row.y,
+    color: row.color,
+    size: row.size,
+    alpha: row.alpha ?? 1,
+    outlineColor: row.outline_color ?? null,
+    outlineWidth: row.outline_width ?? 3,
+    outlineAlpha: row.outline_alpha ?? 1,
+    z: row.z,
+  };
+}
+
+export function annotationToRow(a, sessionId) {
+  return {
+    id: a.uid,
+    session_id: sessionId,
+    kind: a.kind,
+    points: a.points ?? null,
+    text: a.text ?? '',
+    x: a.x,
+    y: a.y,
+    color: a.color,
+    size: a.size,
+    alpha: a.alpha ?? 1,
+    outline_color: a.outlineColor ?? null,
+    outline_width: a.outlineWidth ?? 3,
+    outline_alpha: a.outlineAlpha ?? 1,
+    z: a.z,
+    updated_by: clientId,
+  };
+}
+
+export async function fetchAnnotations(sessionId) {
+  const { data, error } = await supabase
+    .from('table_annotations')
+    .select()
+    .eq('session_id', sessionId);
+  if (error) throw error;
+  return data;
+}
+
+export async function upsertAnnotation(a, sessionId) {
+  await supabase.from('table_annotations').upsert(annotationToRow(a, sessionId));
+}
+
+export async function deleteAnnotation(uid) {
+  await supabase.from('table_annotations').delete().eq('id', uid);
+}
+
+export async function deleteAllAnnotations(sessionId) {
+  await supabase.from('table_annotations').delete().eq('session_id', sessionId);
 }
 
 // Підписка на зміни столу; повертає функцію відписки
@@ -112,6 +213,17 @@ export function subscribeToSession(session, handlers) {
       'postgres_changes',
       { event: 'UPDATE', schema: 'public', table: 'sessions', filter: `id=eq.${session.id}` },
       (payload) => handlers.onPileChange?.(payload.new.pile)
+    )
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'table_annotations', filter: `session_id=eq.${session.id}` },
+      (payload) => {
+        if (payload.eventType === 'DELETE') {
+          handlers.onAnnDelete?.(payload.old.id);
+        } else if (payload.new.updated_by !== clientId) {
+          handlers.onAnnUpsert?.(rowToAnnotation(payload.new));
+        }
+      }
     )
     .subscribe();
   return () => supabase.removeChannel(channel);

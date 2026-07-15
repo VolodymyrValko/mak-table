@@ -1,36 +1,18 @@
-import { useState } from 'react';
+import { useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+
+function guestName() {
+  return `Гість ${Math.floor(10 + Math.random() * 90)}`;
+}
 
 export default function Join() {
   const { code } = useParams();
   const navigate = useNavigate();
-  const [name, setName] = useState('');
 
-  function handleSubmit(e) {
-    e.preventDefault();
-    // Пізніше: приєднання до сесії через Supabase за кодом `code`.
-    // Поки що просто ведемо на стіл.
-    navigate(`/table/${code}`, { state: { name } });
-  }
+  useEffect(() => {
+    navigate(`/table/${code}`, { state: { name: guestName() }, replace: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code]);
 
-  return (
-    <div className="join-page">
-      <form className="join-card" onSubmit={handleSubmit}>
-        <h1>Приєднатися до столу</h1>
-        <p>Вас запросили до спільної сесії. Як вас звати?</p>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="Ваше ім'я"
-          maxLength={40}
-          required
-          autoFocus
-        />
-        <button type="submit" className="btn btn-primary">
-          Увійти до столу
-        </button>
-      </form>
-    </div>
-  );
+  return <div className="table-status">Приєднуємось до сесії…</div>;
 }

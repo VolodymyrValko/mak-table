@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 900">
+  <defs>
+    <linearGradient id="bg3" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0f4c4c"/>
+      <stop offset="100%" stop-color="#082a2e"/>
+    </linearGradient>
+    <pattern id="dots3" width="90" height="90" patternUnits="userSpaceOnUse">
+      <circle cx="20" cy="20" r="1.4" fill="#8fd8d0" opacity="0.3"/>
+      <circle cx="65" cy="55" r="1" fill="#8fd8d0" opacity="0.22"/>
+      <circle cx="40" cy="75" r="1.2" fill="#8fd8d0" opacity="0.28"/>
+    </pattern>
+  </defs>
+  <rect width="600" height="900" rx="28" fill="url(#bg3)"/>
+  <rect width="600" height="900" rx="28" fill="url(#dots3)"/>
+  <rect x="24" y="24" width="552" height="852" rx="18" fill="none" stroke="#8fd8d0" stroke-width="2" opacity="0.8"/>
+  <rect x="36" y="36" width="528" height="828" rx="14" fill="none" stroke="#8fd8d0" stroke-width="1" opacity="0.4"/>
+  <g transform="translate(300 450)">
+    <circle r="95" fill="none" stroke="#8fd8d0" stroke-width="1.5" opacity="0.7"/>
+    <circle r="72" fill="none" stroke="#8fd8d0" stroke-width="1" opacity="0.4"/>
+    <!-- wave motif -->
+    <g stroke="#c9efe9" stroke-width="4" fill="none" stroke-linecap="round">
+      <path d="M -55 -10 Q -37 -30 -18 -10 Q 0 10 18 -10 Q 37 -30 55 -10"/>
+      <path d="M -55 20 Q -37 0 -18 20 Q 0 40 18 20 Q 37 0 55 20"/>
+      <path d="M -55 50 Q -37 30 -18 50 Q 0 70 18 50 Q 37 30 55 50"/>
+    </g>
+  </g>
+  <g fill="#8fd8d0" opacity="0.6">
+    <path d="M 300 120 l 6 12 13 2 -9 9 2 13 -12 -6 -12 6 2 -13 -9 -9 13 -2 Z"/>
+    <path d="M 300 780 l 6 -12 13 -2 -9 -9 2 -13 -12 6 -12 -6 2 13 -9 9 13 2 Z"/>
+  </g>
+</svg>

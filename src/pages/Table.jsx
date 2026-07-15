@@ -1,16 +1,26 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { Link, useParams, useLocation } from 'react-router-dom';
-import { loadDeck } from '../lib/decks.js';
+import { loadFullDecks, assignBacks } from '../lib/decks.js';
 import { supabase } from '../lib/supabase.js';
 import {
   fetchSession, fetchTableCards, updatePile, upsertCard, deleteCard,
   deleteAllCards, subscribeToSession, joinPresence, rowToCard,
+  fetchAnnotations, upsertAnnotation, deleteAnnotation, deleteAllAnnotations,
+  rowToAnnotation,
 } from '../lib/session.js';
 
-const DECK_ID = 'nature';
-const STORAGE_KEY = `mak-table-${DECK_ID}-v2`;
+const STORAGE_KEY = 'mak-table-all-v3';
 const CARD_W = 130;
 const CARD_H = 195;
+const PALETTE = ['#e74c3c', '#e67e22', '#f1c40f', '#27ae60', '#2980b9', '#8e44ad', '#00bcd4', '#ff6fa5', '#1a1a1a', '#ffffff'];
+
+function hexToRgba(hex, alpha = 1) {
+  if (!hex) return null;
+  const h = hex.replace('#', '');
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h;
+  const n = parseInt(full, 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${alpha})`;
+}
 
 function shuffle(arr) {
   const a = [...arr];
@@ -21,33 +31,110 @@ function shuffle(arr) {
   return a;
 }
 
+// Інваріант: одна cardId не може бути одночасно і в колоді, і на столі,
+// і не може дублюватися всередині колоди. Прибирає такі колізії —
+// це головний захист від «клонів» карт через гонку realtime-подій.
+function pilesWithoutTable(piles, tableCards) {
+  const onTable = new Set(tableCards.map((c) => c.cardId));
+  const out = {};
+  for (const [deckId, ids] of Object.entries(piles || {})) {
+    const seen = new Set();
+    out[deckId] = ids.filter((id) => {
+      if (onTable.has(id) || seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  }
+  return out;
+}
+
 export default function Table() {
-  const { sessionId: code } = useParams(); // код спільної сесії з URL
+  const { sessionId: code } = useParams();
   const location = useLocation();
   const shared = Boolean(code && supabase);
   const myName = location.state?.name || (shared ? 'Учасник' : '');
 
-  const [deck, setDeck] = useState(null);
-  const [session, setSession] = useState(null); // рядок sessions із БД
+  const [decks, setDecks] = useState(null);   // усі колоди з картами
+  const [activeDeckId, setActiveDeckId] = useState(null);
+  const [session, setSession] = useState(null);
   const [error, setError] = useState(null);
   const [loaded, setLoaded] = useState(false);
 
-  const [pile, setPile] = useState([]);
+  const [piles, setPiles] = useState({});     // { deckId: [cardId, ...] }
   const [table, setTable] = useState([]);
   const [maxZ, setMaxZ] = useState(1);
   const [selected, setSelected] = useState(null);
-  const [zoomed, setZoomed] = useState(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerMode, setPickerMode] = useState('open'); // 'open' | 'blind'
+  const [blindOrder, setBlindOrder] = useState([]); // перемішаний порядок карт для «наосліп»
+  const [pickMenuOpen, setPickMenuOpen] = useState(false);
   const [people, setPeople] = useState([]);
   const [copied, setCopied] = useState(false);
+  const [trayOpen, setTrayOpen] = useState(false);
+
+  // Малювання і текст
+  const [annotations, setAnnotations] = useState([]);
+  const [tool, setTool] = useState('select'); // 'select' | 'draw' | 'text' | 'delete'
+  const [selectedAnn, setSelectedAnn] = useState(null);
+  const [editingAnn, setEditingAnn] = useState(null);
+  const [colorTarget, setColorTarget] = useState('fill'); // 'fill' | 'outline'
+
+  const [drawColor, setDrawColor] = useState('#e74c3c');
+  const [drawSize, setDrawSize] = useState(4);
+  const [drawAlpha, setDrawAlpha] = useState(1);
+  const [drawOutlineColor, setDrawOutlineColor] = useState(null);
+  const [drawOutlineWidth, setDrawOutlineWidth] = useState(3);
+  const [drawOutlineAlpha, setDrawOutlineAlpha] = useState(1);
+
+  const [textColor, setTextColor] = useState('#1a2340');
+  const [textSize, setTextSize] = useState(22);
+  const [textAlpha, setTextAlpha] = useState(1);
+  const [textOutlineColor, setTextOutlineColor] = useState(null);
+  const [textOutlineWidth, setTextOutlineWidth] = useState(2);
+  const [textOutlineAlpha, setTextOutlineAlpha] = useState(1);
+
+  const annMaxZRef = useRef(1);
 
   const canvasRef = useRef(null);
   const dragRef = useRef(null);
   const lastSentRef = useRef(0);
-  const noteTimerRef = useRef({});
+  const pickMenuRef = useRef(null);
+  const tableRef = useRef([]);              // актуальний table для async-обробників
+  const deletedCardRef = useRef(new Map()); // uid → час, до якого ігноруємо «воскресіння»
   const [canvasSize, setCanvasSize] = useState({ w: 1, h: 1 });
 
-  // Розмір полотна (координати карт нормалізовані 0..1)
+  // Тримаємо tableRef синхронізованим — realtime-обробники читають його
+  useEffect(() => { tableRef.current = table; }, [table]);
+
+  function markCardDeleted(uid) {
+    const m = deletedCardRef.current;
+    m.set(uid, Date.now() + 6000);
+    for (const [k, exp] of m) if (exp < Date.now()) m.delete(k);
+  }
+
+  // Закрити випадне меню «Обрати картку» при кліку поза ним
+  useEffect(() => {
+    if (!pickMenuOpen) return;
+    function onDocClick(e) {
+      if (pickMenuRef.current && !pickMenuRef.current.contains(e.target)) {
+        setPickMenuOpen(false);
+      }
+    }
+    document.addEventListener('pointerdown', onDocClick);
+    return () => document.removeEventListener('pointerdown', onDocClick);
+  }, [pickMenuOpen]);
+
+  // Глобальний індекс: id карти → { card, deck }
+  const cardIndex = useMemo(() => {
+    const m = {};
+    decks?.forEach((d) =>
+      d.cards.forEach((c) => {
+        m[c.id] = { card: c, deck: d };
+      })
+    );
+    return m;
+  }, [decks]);
+
   useEffect(() => {
     function measure() {
       const el = canvasRef.current;
@@ -65,45 +152,123 @@ export default function Table() {
 
     (async () => {
       try {
-        const d = await loadDeck(DECK_ID);
-        setDeck(d);
+        const all = assignBacks(await loadFullDecks());
+        if (!all.length) throw new Error('Немає жодної колоди');
+        setDecks(all);
+        const validDeck = (id) => all.some((d) => d.id === id);
+        const idx = {};
+        all.forEach((d) => d.cards.forEach((c) => (idx[c.id] = d.id)));
 
         if (shared) {
           const s = await fetchSession(code);
           setSession(s);
-          setPile(s.pile);
+
           const rows = await fetchTableCards(s.id);
-          const cards = rows.map(rowToCard);
+          const cards = rows.map(rowToCard).filter((tc) => idx[tc.cardId]);
+          const onTable = new Set(cards.map((c) => c.cardId));
+
+          // pile: старі сесії — масив, нові — обʼєкт по колодах
+          const p = Array.isArray(s.pile)
+            ? { [s.deck_id]: s.pile }
+            : { ...(s.pile || {}) };
+          // колоди, яких у сесії ще нема — ініціалізуємо локально
+          all.forEach((d) => {
+            if (!p[d.id]) {
+              p[d.id] = shuffle(
+                d.cards.map((c) => c.id).filter((id) => !onTable.has(id))
+              );
+            } else {
+              p[d.id] = p[d.id].filter((id) => idx[id] && !onTable.has(id));
+            }
+          });
+
+          setPiles(p);
           setTable(cards);
           setMaxZ(cards.reduce((m, c) => Math.max(m, c.z), 1));
+          setActiveDeckId(validDeck(s.deck_id) ? s.deck_id : all[0].id);
+
+          const annRows = await fetchAnnotations(s.id);
+          const anns = annRows.map(rowToAnnotation);
+          setAnnotations(anns);
+          annMaxZRef.current = anns.reduce((m, a) => Math.max(m, a.z), 1);
 
           unsubDb = subscribeToSession(s, {
-            onCardUpsert: (tc) =>
+            onCardUpsert: (tc) => {
+              // Delete-wins: якщо ми щойно видалили цю карту, а до нас
+              // долетів запізнілий upsert від співрозмовника — не воскрешаємо,
+              // а дочищаємо рядок у БД.
+              const exp = deletedCardRef.current.get(tc.uid);
+              if (exp && exp > Date.now()) {
+                deleteCard(tc.uid);
+                return;
+              }
               setTable((t) => {
+                // та сама cardId уже на столі під іншим uid → це клон, ігноруємо
+                const dupe = t.find((c) => c.cardId === tc.cardId && c.uid !== tc.uid);
+                if (dupe) return t;
                 const i = t.findIndex((c) => c.uid === tc.uid);
-                if (i === -1) return [...t, tc];
-                const copy = [...t];
-                copy[i] = tc;
+                const next = i === -1 ? [...t, tc] : t.map((c) => (c.uid === tc.uid ? tc : c));
+                return next;
+              });
+              // карта на столі не може лишатися і в колоді
+              setPiles((p) => pilesWithoutTable(p, [...tableRef.current, tc]));
+            },
+            onCardDelete: (uid) => {
+              // якщо ми зараз тягнемо саме цю карту — припиняємо жест,
+              // щоб наші pointermove не воскресили її назад
+              if (dragRef.current?.uid === uid) dragRef.current = null;
+              setTable((t) => t.filter((c) => c.uid !== uid));
+            },
+            onPileChange: (p2) => {
+              const raw = Array.isArray(p2) ? { [s.deck_id]: p2 } : p2 || {};
+              setPiles(pilesWithoutTable(raw, tableRef.current));
+            },
+            onAnnUpsert: (a) =>
+              setAnnotations((list) => {
+                const i = list.findIndex((x) => x.uid === a.uid);
+                if (i === -1) return [...list, a];
+                const copy = [...list];
+                copy[i] = a;
                 return copy;
               }),
-            onCardDelete: (uid) => setTable((t) => t.filter((c) => c.uid !== uid)),
-            onPileChange: (p) => setPile(p),
+            onAnnDelete: (uid) => setAnnotations((list) => list.filter((x) => x.uid !== uid)),
           });
           unsubPresence = joinPresence(code, myName, setPeople);
         } else {
+          const qDeck = new URLSearchParams(location.search).get('deck');
+          let p = {};
+          let t = [];
+          let z = 1;
+          let act = null;
+
+          let anns = [];
           const saved = localStorage.getItem(STORAGE_KEY);
           if (saved) {
             try {
               const s = JSON.parse(saved);
-              const valid = new Set(d.cards.map((c) => c.id));
-              setPile(s.pile.filter((id) => valid.has(id)));
-              setTable(s.table.filter((tc) => valid.has(tc.cardId)));
-              setMaxZ(s.maxZ || 1);
-              setLoaded(true);
-              return;
+              t = (s.table || []).filter((tc) => idx[tc.cardId]);
+              const onTable = new Set(t.map((c) => c.cardId));
+              all.forEach((d) => {
+                const savedPile = (s.piles || {})[d.id];
+                p[d.id] = savedPile
+                  ? savedPile.filter((id) => idx[id] && !onTable.has(id))
+                  : shuffle(d.cards.map((c) => c.id).filter((id) => !onTable.has(id)));
+              });
+              z = s.maxZ || 1;
+              act = validDeck(s.activeDeckId) ? s.activeDeckId : null;
+              anns = Array.isArray(s.annotations) ? s.annotations : [];
             } catch { /* почнемо заново */ }
           }
-          setPile(shuffle(d.cards.map((c) => c.id)));
+          if (!Object.keys(p).length) {
+            all.forEach((d) => (p[d.id] = shuffle(d.cards.map((c) => c.id))));
+          }
+
+          setPiles(p);
+          setTable(t);
+          setMaxZ(z);
+          setActiveDeckId(validDeck(qDeck) ? qDeck : act || all[0].id);
+          setAnnotations(anns);
+          annMaxZRef.current = anns.reduce((m, a) => Math.max(m, a.z), 1);
         }
         setLoaded(true);
       } catch (e) {
@@ -121,12 +286,15 @@ export default function Table() {
   // Автозбереження (тільки соло)
   useEffect(() => {
     if (!loaded || shared) return;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ pile, table, maxZ }));
-  }, [pile, table, maxZ, loaded, shared]);
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ piles, table, maxZ, activeDeckId, annotations })
+    );
+  }, [piles, table, maxZ, activeDeckId, annotations, loaded, shared]);
 
-  const cardById = (id) => deck.cards.find((c) => c.id === id);
+  const activeDeck = decks?.find((d) => d.id === activeDeckId);
+  const activePile = piles[activeDeckId] || [];
 
-  // Локальна зміна карти + синхронізація
   const patchCard = useCallback((uid, patch, sync = true) => {
     setTable((t) => {
       const next = t.map((tc) => (tc.uid === uid ? { ...tc, ...patch } : tc));
@@ -140,6 +308,8 @@ export default function Table() {
 
   // ==== Дії ====
   function placeCard(cardId, faceUp) {
+    // не викладаємо карту, яка вже лежить на столі (захист від подвійного кліку/гонки)
+    if (table.some((c) => c.cardId === cardId)) return;
     const jitterX = (Math.random() - 0.5) * 0.15;
     const jitterY = (Math.random() - 0.5) * 0.15;
     const tc = {
@@ -148,23 +318,46 @@ export default function Table() {
       x: Math.min(Math.max(0.5 - (CARD_W / canvasSize.w) / 2 + jitterX, 0.02), 0.9),
       y: Math.min(Math.max(0.5 - (CARD_H / canvasSize.h) / 2 + jitterY, 0.02), 0.75),
       rot: (Math.random() - 0.5) * 10,
+      scale: 1,
       faceUp,
       z: maxZ + 1,
       note: '',
     };
     setMaxZ(tc.z);
     setTable((t) => [...t, tc]);
-    const newPile = pile.filter((id) => id !== cardId);
-    setPile(newPile);
+    const newPiles = {
+      ...piles,
+      [activeDeckId]: activePile.filter((id) => id !== cardId),
+    };
+    setPiles(newPiles);
     setSelected(tc.uid);
+    setSelectedAnn(null);
+    setTool('select');
     if (shared) {
       upsertCard(tc, session.id);
-      updatePile(session.id, newPile);
+      updatePile(session.id, newPiles);
     }
   }
 
-  const drawRandom = () => pile.length && placeCard(pile[0], false);
-  const pickCard = (cardId) => { setPickerOpen(false); placeCard(cardId, true); };
+  // Витягування завжди випадкове — незалежно від порядку в стосі
+  function drawRandom(faceUp) {
+    if (!activePile.length) return;
+    const cardId = activePile[Math.floor(Math.random() * activePile.length)];
+    placeCard(cardId, faceUp);
+  }
+  const pickCard = (cardId) => {
+    setPickerOpen(false);
+    placeCard(cardId, pickerMode === 'open');
+  };
+
+  function openPicker(mode) {
+    setPickerMode(mode);
+    // «наосліп» — щоразу перемішуємо порядок, щоб позиції/номери карт
+    // не збігалися з попереднім разом і не були передбачуваними
+    if (mode === 'blind') setBlindOrder(shuffle(activePile));
+    setPickerOpen(true);
+    setPickMenuOpen(false);
+  }
 
   function bringToFront(uid) {
     const z = maxZ + 1;
@@ -180,47 +373,37 @@ export default function Table() {
   function returnToPile(uid) {
     const tc = table.find((c) => c.uid === uid);
     if (!tc) return;
+    const home = cardIndex[tc.cardId]?.deck.id;
     setTable((t) => t.filter((c) => c.uid !== uid));
-    const newPile = [...pile, tc.cardId];
-    setPile(newPile);
+    let newPiles = piles;
+    if (home) {
+      const arr = (piles[home] || []).filter((id) => id !== tc.cardId);
+      // повертаємо карту у випадкову позицію колоди, а не в кінець
+      arr.splice(Math.floor(Math.random() * (arr.length + 1)), 0, tc.cardId);
+      newPiles = { ...piles, [home]: arr };
+    }
+    setPiles(newPiles);
     if (selected === uid) setSelected(null);
-    if (zoomed === uid) setZoomed(null);
     if (shared) {
+      markCardDeleted(uid); // захист від запізнілого upsert від співрозмовника
       deleteCard(uid);
-      updatePile(session.id, newPile);
+      updatePile(session.id, newPiles);
     }
-  }
-
-  function setNote(uid, note) {
-    patchCard(uid, { note }, false); // локально миттєво
-    if (shared) {
-      clearTimeout(noteTimerRef.current[uid]);
-      noteTimerRef.current[uid] = setTimeout(() => {
-        setTable((t) => {
-          const tc = t.find((c) => c.uid === uid);
-          if (tc) upsertCard(tc, session.id);
-          return t;
-        });
-      }, 600);
-    }
-  }
-
-  function shufflePile() {
-    const p = shuffle(pile);
-    setPile(p);
-    if (shared) updatePile(session.id, p);
   }
 
   function clearTable() {
-    if (!window.confirm('Прибрати всі карти зі столу й почати заново?')) return;
-    const p = shuffle(deck.cards.map((c) => c.id));
+    if (!window.confirm('Прибрати всі карти й малюнки зі столу та почати заново?')) return;
+    const p = {};
+    decks.forEach((d) => (p[d.id] = shuffle(d.cards.map((c) => c.id))));
     setTable([]);
-    setPile(p);
+    setPiles(p);
     setSelected(null);
-    setZoomed(null);
+    setAnnotations([]);
+    setSelectedAnn(null);
     if (shared) {
       deleteAllCards(session.id);
       updatePile(session.id, p);
+      deleteAllAnnotations(session.id);
     }
   }
 
@@ -232,26 +415,96 @@ export default function Table() {
     });
   }
 
+  // ==== Малювання і текст: спільні хелпери ====
+  const patchAnn = useCallback((uid, patch, sync = true) => {
+    setAnnotations((list) => {
+      const next = list.map((a) => (a.uid === uid ? { ...a, ...patch } : a));
+      if (shared && sync) {
+        const a = next.find((x) => x.uid === uid);
+        if (a) upsertAnnotation(a, session.id);
+      }
+      return next;
+    });
+  }, [shared, session]);
+
+  function syncAnn(uid) {
+    if (!shared) return;
+    setAnnotations((list) => {
+      const a = list.find((x) => x.uid === uid);
+      if (a) upsertAnnotation(a, session.id);
+      return list;
+    });
+  }
+
+  function deleteAnn(uid) {
+    setAnnotations((list) => list.filter((a) => a.uid !== uid));
+    if (selectedAnn === uid) setSelectedAnn(null);
+    if (editingAnn === uid) setEditingAnn(null);
+    if (shared) deleteAnnotation(uid);
+  }
+
+  function bringAnnToFront(uid) {
+    annMaxZRef.current += 1;
+    patchAnn(uid, { z: annMaxZRef.current });
+  }
+
+  // ==== Клавіша Delete — прибрати вибрану карту або анотацію зі столу ====
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key !== 'Delete') return;
+      const tag = document.activeElement?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || editingAnn) return;
+      if (pickerOpen) return;
+      if (selectedAnn) deleteAnn(selectedAnn);
+      else if (selected) returnToPile(selected);
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+
+  // Фінальна синхронізація карти після жесту
+  function syncCard(uid) {
+    if (!shared) return;
+    setTable((t) => {
+      const tc = t.find((c) => c.uid === uid);
+      if (tc) upsertCard(tc, session.id);
+      return t;
+    });
+  }
+
   // ==== Перетягування ====
   function onCardPointerDown(e, uid) {
     e.preventDefault();
+    // не даємо події дійти до canvas-обробника — інакше, якщо активний
+    // інструмент малювання/тексту, клік по картці ще й почне малювати штрих
+    e.stopPropagation();
+    if (tool === 'delete') {
+      returnToPile(uid);
+      return;
+    }
     const tc = table.find((c) => c.uid === uid);
     dragRef.current = {
       uid,
       dx: e.clientX - tc.x * canvasSize.w,
       dy: e.clientY - tc.y * canvasSize.h,
+      startX: e.clientX,
+      startY: e.clientY,
+      moved: false,
     };
     bringToFront(uid);
     setSelected(uid);
+    setSelectedAnn(null);
+    setTool('select');
     e.currentTarget.setPointerCapture(e.pointerId);
   }
 
   function onCardPointerMove(e) {
     const d = dragRef.current;
     if (!d) return;
+    if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) > 4) d.moved = true;
+    if (!d.moved) return;
     const x = (e.clientX - d.dx) / canvasSize.w;
     const y = (e.clientY - d.dy) / canvasSize.h;
-    // під час руху шлемо в мережу не частіше ніж раз на 120 мс
     const throttleOk = Date.now() - lastSentRef.current > 120;
     if (throttleOk) lastSentRef.current = Date.now();
     patchCard(d.uid, { x, y }, throttleOk);
@@ -260,27 +513,313 @@ export default function Table() {
   function onCardPointerUp() {
     const d = dragRef.current;
     dragRef.current = null;
-    if (d && shared) {
-      // фінальна позиція — завжди
-      setTable((t) => {
-        const tc = t.find((c) => c.uid === d.uid);
-        if (tc) upsertCard(tc, session.id);
-        return t;
-      });
+    if (d && d.moved) syncCard(d.uid);
+  }
+
+  // ==== Жести на хватах: розмір (за кут) і поворот ====
+  function canvasPoint(e) {
+    const r = canvasRef.current.getBoundingClientRect();
+    return { px: e.clientX - r.left, py: e.clientY - r.top };
+  }
+
+  function startGesture(e, uid, mode) {
+    e.stopPropagation();
+    e.preventDefault();
+    const tc = table.find((c) => c.uid === uid);
+    if (!tc) return;
+    const { px, py } = canvasPoint(e);
+    const ox = tc.x * canvasSize.w;
+    const oy = tc.y * canvasSize.h;
+    const s = tc.scale ?? 1;
+    const cx = ox + (CARD_W * s) / 2;
+    const cy = oy + (CARD_H * s) / 2;
+
+    const g =
+      mode === 'resize'
+        ? { startDist: Math.max(20, Math.hypot(px - ox, py - oy)), startScale: s, ox, oy }
+        : { startAngle: Math.atan2(py - cy, px - cx), startRot: tc.rot, cx, cy };
+
+    const move = (ev) => {
+      const { px: mx, py: my } = canvasPoint(ev);
+      const throttleOk = Date.now() - lastSentRef.current > 120;
+      if (throttleOk) lastSentRef.current = Date.now();
+      if (mode === 'resize') {
+        const dist = Math.hypot(mx - g.ox, my - g.oy);
+        const scale = Math.min(3, Math.max(0.4, (g.startScale * dist) / g.startDist));
+        patchCard(uid, { scale }, throttleOk);
+      } else {
+        const angle = Math.atan2(my - g.cy, mx - g.cx);
+        const rot = g.startRot + ((angle - g.startAngle) * 180) / Math.PI;
+        patchCard(uid, { rot }, throttleOk);
+      }
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      syncCard(uid);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up, { once: true });
+  }
+
+  // ==== Малювання ====
+  function startDrawing(e) {
+    e.preventDefault();
+    if (!canvasSize.w || !canvasSize.h) return;
+    const { px, py } = canvasPoint(e);
+    const uid = crypto.randomUUID();
+    const first = { x: px / canvasSize.w, y: py / canvasSize.h };
+    annMaxZRef.current += 1;
+    const ann = {
+      uid, kind: 'draw', points: [first], text: '',
+      x: 0, y: 0, color: drawColor, size: drawSize, alpha: drawAlpha,
+      outlineColor: drawOutlineColor, outlineWidth: drawOutlineWidth, outlineAlpha: drawOutlineAlpha,
+      z: annMaxZRef.current,
+    };
+    setAnnotations((list) => [...list, ann]);
+    let pts = [first];
+
+    const move = (ev) => {
+      const p = canvasPoint(ev);
+      pts = [...pts, { x: p.px / canvasSize.w, y: p.py / canvasSize.h }];
+      setAnnotations((list) => list.map((a) => (a.uid === uid ? { ...a, points: pts } : a)));
+      const throttleOk = Date.now() - lastSentRef.current > 150;
+      if (throttleOk && shared) {
+        lastSentRef.current = Date.now();
+        upsertAnnotation({ ...ann, points: pts }, session.id);
+      }
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      if (pts.length < 2) {
+        // просто клік без руху — прибираємо порожню крапку
+        setAnnotations((list) => list.filter((a) => a.uid !== uid));
+        return;
+      }
+      syncAnn(uid);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up, { once: true });
+  }
+
+  // ==== Текст ====
+  function addText(e) {
+    e.preventDefault();
+    if (!canvasSize.w || !canvasSize.h) return;
+    const { px, py } = canvasPoint(e);
+    const uid = crypto.randomUUID();
+    annMaxZRef.current += 1;
+    const ann = {
+      uid, kind: 'text', points: null, text: '',
+      x: px / canvasSize.w, y: py / canvasSize.h,
+      color: textColor, size: textSize, alpha: textAlpha,
+      outlineColor: textOutlineColor, outlineWidth: textOutlineWidth, outlineAlpha: textOutlineAlpha,
+      z: annMaxZRef.current,
+    };
+    setAnnotations((list) => [...list, ann]);
+    setSelectedAnn(uid);
+    setSelected(null);
+    setEditingAnn(uid);
+    setTool('select');
+  }
+
+  function finishEditingText(uid, value) {
+    setEditingAnn(null);
+    const text = value.trim();
+    if (!text) {
+      deleteAnn(uid);
+      return;
     }
+    patchAnn(uid, { text });
+  }
+
+  // ==== Переміщення анотацій (текст і малюнок цілком) ====
+  function onAnnPointerDown(e, uid) {
+    e.stopPropagation();
+    e.preventDefault();
+    if (editingAnn === uid) return;
+    if (tool === 'delete') {
+      deleteAnn(uid);
+      return;
+    }
+    const a = annotations.find((x) => x.uid === uid);
+    if (!a) return;
+    bringAnnToFront(uid);
+    setSelectedAnn(uid);
+    setSelected(null);
+
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let moved = false;
+    const basePoints = a.points;
+    const baseX = a.x;
+    const baseY = a.y;
+
+    const move = (ev) => {
+      const ddx = (ev.clientX - startX) / canvasSize.w;
+      const ddy = (ev.clientY - startY) / canvasSize.h;
+      if (Math.hypot(ev.clientX - startX, ev.clientY - startY) > 3) moved = true;
+      if (!moved) return;
+      const throttleOk = Date.now() - lastSentRef.current > 120;
+      if (throttleOk) lastSentRef.current = Date.now();
+      if (a.kind === 'text') {
+        patchAnn(uid, { x: baseX + ddx, y: baseY + ddy }, throttleOk);
+      } else {
+        patchAnn(uid, { points: basePoints.map((p) => ({ x: p.x + ddx, y: p.y + ddy })) }, throttleOk);
+      }
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      if (moved) syncAnn(uid);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up, { once: true });
+  }
+
+  // ==== Панель кольору/розміру/прозорості для малювання і тексту ====
+  const kindDefaults = {
+    draw: {
+      color: drawColor, setColor: setDrawColor,
+      size: drawSize, setSize: setDrawSize, sizeMin: 2, sizeMax: 20, sizeLabel: 'Товщина лінії',
+      alpha: drawAlpha, setAlpha: setDrawAlpha,
+      outlineColor: drawOutlineColor, setOutlineColor: setDrawOutlineColor,
+      outlineWidth: drawOutlineWidth, setOutlineWidth: setDrawOutlineWidth,
+      outlineWidthMin: 0, outlineWidthMax: 14, outlineLabel: 'Товщина контуру',
+      outlineAlpha: drawOutlineAlpha, setOutlineAlpha: setDrawOutlineAlpha,
+    },
+    text: {
+      color: textColor, setColor: setTextColor,
+      size: textSize, setSize: setTextSize, sizeMin: 12, sizeMax: 56, sizeLabel: 'Розмір тексту',
+      alpha: textAlpha, setAlpha: setTextAlpha,
+      outlineColor: textOutlineColor, setOutlineColor: setTextOutlineColor,
+      outlineWidth: textOutlineWidth, setOutlineWidth: setTextOutlineWidth,
+      outlineWidthMin: 0, outlineWidthMax: 8, outlineLabel: 'Товщина контуру',
+      outlineAlpha: textOutlineAlpha, setOutlineAlpha: setTextOutlineAlpha,
+    },
+  };
+
+  function renderColorPanel(kind) {
+    const activeAnnObj = selectedAnn ? annotations.find((a) => a.uid === selectedAnn) : null;
+    const editingExisting = !!activeAnnObj && activeAnnObj.kind === kind;
+    if (tool !== kind && !editingExisting) return null;
+
+    const cfg = kindDefaults[kind];
+    const curColor = editingExisting ? activeAnnObj.color : cfg.color;
+    const curOutlineColor = editingExisting ? activeAnnObj.outlineColor : cfg.outlineColor;
+    const curSize = editingExisting ? activeAnnObj.size : cfg.size;
+    const curAlpha = editingExisting ? activeAnnObj.alpha ?? 1 : cfg.alpha;
+    const curOutlineWidth = editingExisting ? activeAnnObj.outlineWidth ?? cfg.outlineWidth : cfg.outlineWidth;
+    const curOutlineAlpha = editingExisting ? activeAnnObj.outlineAlpha ?? 1 : cfg.outlineAlpha;
+
+    function pickColor(c) {
+      if (colorTarget === 'fill') {
+        cfg.setColor(c);
+        if (editingExisting) patchAnn(selectedAnn, { color: c });
+      } else {
+        cfg.setOutlineColor(c);
+        if (editingExisting) patchAnn(selectedAnn, { outlineColor: c });
+      }
+    }
+    function clearOutline() {
+      cfg.setOutlineColor(null);
+      if (editingExisting) patchAnn(selectedAnn, { outlineColor: null });
+    }
+    function changeSize(v) {
+      if (colorTarget === 'fill') {
+        cfg.setSize(v);
+        if (editingExisting) patchAnn(selectedAnn, { size: v });
+      } else {
+        cfg.setOutlineWidth(v);
+        if (editingExisting) patchAnn(selectedAnn, { outlineWidth: v });
+      }
+    }
+    function changeAlpha(v) {
+      if (colorTarget === 'fill') {
+        cfg.setAlpha(v);
+        if (editingExisting) patchAnn(selectedAnn, { alpha: v });
+      } else {
+        cfg.setOutlineAlpha(v);
+        if (editingExisting) patchAnn(selectedAnn, { outlineAlpha: v });
+      }
+    }
+
+    const activeSwatchColor = colorTarget === 'fill' ? curColor : curOutlineColor;
+    const sizeVal = colorTarget === 'fill' ? curSize : curOutlineWidth;
+    const alphaVal = colorTarget === 'fill' ? curAlpha : curOutlineAlpha;
+    const sizeMin = colorTarget === 'fill' ? cfg.sizeMin : cfg.outlineWidthMin;
+    const sizeMax = colorTarget === 'fill' ? cfg.sizeMax : cfg.outlineWidthMax;
+    const sizeTitle = colorTarget === 'fill' ? cfg.sizeLabel : cfg.outlineLabel;
+
+    return (
+      <div className="tool-props">
+        <div className="target-toggle">
+          <button
+            className={colorTarget === 'fill' ? 'is-active' : ''}
+            onClick={() => setColorTarget('fill')}
+            title="Колір заливки"
+          >
+            🎨
+          </button>
+          <button
+            className={colorTarget === 'outline' ? 'is-active' : ''}
+            onClick={() => setColorTarget('outline')}
+            title="Колір контуру"
+          >
+            ⭕
+          </button>
+        </div>
+        <div className="swatch-grid">
+          {PALETTE.map((c) => (
+            <button
+              key={c}
+              className={`swatch ${activeSwatchColor === c ? 'is-active' : ''}`}
+              style={{ background: c }}
+              onClick={() => pickColor(c)}
+              title={c}
+            />
+          ))}
+          {colorTarget === 'outline' && (
+            <button
+              className={`swatch swatch-none ${!activeSwatchColor ? 'is-active' : ''}`}
+              onClick={clearOutline}
+              title="Без контуру"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+        <input
+          type="range"
+          className="size-slider"
+          min={sizeMin}
+          max={sizeMax}
+          value={sizeVal}
+          onChange={(e) => changeSize(Number(e.target.value))}
+          title={sizeTitle}
+        />
+        <input
+          type="range"
+          className="alpha-slider"
+          min={0}
+          max={100}
+          value={Math.round(alphaVal * 100)}
+          onChange={(e) => changeAlpha(Number(e.target.value) / 100)}
+          title="Прозорість"
+        />
+      </div>
+    );
   }
 
   if (error) return <div className="table-status">Помилка: {error}</div>;
-  if (!deck || !loaded) return <div className="table-status">Завантаження столу…</div>;
-
-  const zoomedCard = zoomed ? table.find((c) => c.uid === zoomed) : null;
+  if (!decks || !loaded || !activeDeck)
+    return <div className="table-status">Завантаження столу…</div>;
 
   return (
     <div className="table-page">
       <header className="table-header">
         <Link to="/" className="btn btn-ghost">←</Link>
-        <span className="table-deck-name">{deck.name}</span>
-        <span className="pile-counter">У колоді: {pile.length}</span>
+
+        <span className="table-deck-name">{activeDeck.name}</span>
+        <span className="pile-counter">У колоді: {activePile.length}</span>
 
         {shared && (
           <div className="share-block">
@@ -293,34 +832,131 @@ export default function Table() {
           </div>
         )}
 
+        <div className="tool-group">
+          <button
+            className={`btn btn-tool ${tool === 'select' ? 'is-active' : ''}`}
+            onClick={() => setTool('select')}
+            title="Обрати / перемістити"
+          >
+            🖱
+          </button>
+          <button
+            className={`btn btn-tool ${tool === 'draw' ? 'is-active' : ''}`}
+            onClick={() => { setTool('draw'); setSelected(null); setSelectedAnn(null); }}
+            title="Малювати"
+          >
+            ✏️
+          </button>
+          <button
+            className={`btn btn-tool ${tool === 'text' ? 'is-active' : ''}`}
+            onClick={() => { setTool('text'); setSelected(null); setSelectedAnn(null); }}
+            title="Додати текст"
+          >
+            🔤
+          </button>
+          <button
+            className={`btn btn-tool ${tool === 'delete' ? 'is-active' : ''}`}
+            onClick={() => { setTool('delete'); setSelected(null); setSelectedAnn(null); }}
+            title="Видаляти об'єкти (картки, малюнки, текст) по одному кліком"
+          >
+            🗑️
+          </button>
+        </div>
+
+        {renderColorPanel('draw')}
+        {renderColorPanel('text')}
+
         <div className="table-actions">
-          <button className="btn btn-table" onClick={drawRandom} disabled={!pile.length}>
-            🎴 Витягнути
-          </button>
-          <button className="btn btn-table" onClick={() => setPickerOpen(true)} disabled={!pile.length}>
-            👁 Обрати
-          </button>
-          <button className="btn btn-table" onClick={shufflePile} disabled={pile.length < 2}>
-            🔀 Перемішати
-          </button>
-          <button className="btn btn-table btn-danger" onClick={clearTable} disabled={!table.length}>
+          <div className="pick-menu" ref={pickMenuRef}>
+            <button
+              className="btn btn-table"
+              onClick={() => setPickMenuOpen((o) => !o)}
+              disabled={!activePile.length}
+            >
+              🃏 Обрати картку {pickMenuOpen ? '▴' : '▾'}
+            </button>
+            {pickMenuOpen && (
+              <div className="pick-menu-dropdown">
+                <button onClick={() => { drawRandom(true); setPickMenuOpen(false); }}>
+                  🎴 Витягнути горілиць
+                </button>
+                <button onClick={() => { drawRandom(false); setPickMenuOpen(false); }}>
+                  🂠 Витягнути долілиць
+                </button>
+                <button onClick={() => openPicker('open')}>
+                  👁 Обрати відкрито
+                </button>
+                <button onClick={() => openPicker('blind')}>
+                  🙈 Обрати наосліп
+                </button>
+              </div>
+            )}
+          </div>
+          <button className="btn btn-table btn-danger" onClick={clearTable} disabled={!table.length && !annotations.length}>
             ✨ Очистити
           </button>
         </div>
       </header>
 
       <main
-        className="table-canvas"
+        className={`table-canvas tool-${tool}`}
         ref={canvasRef}
         onPointerDown={(e) => {
-          if (e.target === canvasRef.current) setSelected(null);
+          if (tool === 'draw') { startDrawing(e); return; }
+          if (tool === 'text') { addText(e); return; }
+          if (e.target === canvasRef.current) { setSelected(null); setSelectedAnn(null); }
         }}
       >
-        {pile.length > 0 && (
-          <button className="deck-pile" onClick={drawRandom} title="Натисніть, щоб витягнути карту">
-            <img src={deck.back} alt="Колода" draggable={false} />
-            <span className="deck-pile-count">{pile.length}</span>
+        {activePile.length > 0 && (
+          <button
+            className="deck-pile"
+            onPointerDown={(e) => e.stopPropagation()}
+            onClick={() => drawRandom(false)}
+            title={`Витягнути карту долілиць із колоди «${activeDeck.name}»`}
+          >
+            <img src={activeDeck.back} alt="Колода" draggable={false} />
+            <span className="deck-pile-count">{activePile.length}</span>
           </button>
+        )}
+
+        {/* Панель вибору колоди — сорочки всіх колод ліворуч від стосу */}
+        {decks.length >= 1 && (
+          <>
+            <button
+              className="deck-tray-toggle"
+              onPointerDown={(e) => e.stopPropagation()}
+              onClick={() => setTrayOpen((o) => !o)}
+              title={trayOpen ? 'Сховати колоди' : 'Показати колоди'}
+            >
+              {trayOpen ? '›' : '‹'}
+            </button>
+            {trayOpen && (
+              <div className="deck-tray" onPointerDown={(e) => e.stopPropagation()}>
+                {decks.map((d) => (
+                  <button
+                    key={d.id}
+                    className={`deck-tray-item ${d.id === activeDeckId ? 'is-active' : ''}`}
+                    onClick={() => setActiveDeckId(d.id)}
+                    title={d.name}
+                  >
+                    <img src={d.back} alt="" draggable={false} />
+                    <span className="deck-tray-name">{d.name}</span>
+                    <span className="deck-tray-count">{piles[d.id]?.length ?? 0}</span>
+                  </button>
+                ))}
+                {supabase && (
+                  <Link
+                    to="/decks"
+                    className="deck-tray-item deck-tray-add"
+                    title="Додати нову колоду"
+                  >
+                    <span className="deck-tray-add-icon">+</span>
+                    <span className="deck-tray-name">Нова колода</span>
+                  </Link>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         {table.length === 0 && (
@@ -330,8 +966,9 @@ export default function Table() {
         )}
 
         {table.map((tc) => {
-          const card = cardById(tc.cardId);
-          if (!card) return null;
+          const entry = cardIndex[tc.cardId];
+          if (!entry) return null;
+          const s = tc.scale ?? 1;
           return (
             <div
               key={tc.uid}
@@ -339,6 +976,8 @@ export default function Table() {
               style={{
                 left: tc.x * canvasSize.w,
                 top: tc.y * canvasSize.h,
+                width: CARD_W * s,
+                height: CARD_H * s,
                 zIndex: tc.z,
                 transform: `rotate(${tc.rot}deg)`,
               }}
@@ -348,36 +987,185 @@ export default function Table() {
               onDoubleClick={() => flipCard(tc.uid)}
             >
               <div className={`card-inner ${tc.faceUp ? 'face-up' : ''}`}>
-                <img className="card-face card-back" src={deck.back} alt="" draggable={false} />
-                <img className="card-face card-front" src={card.image} alt={card.name} draggable={false} />
+                <img className="card-face card-back" src={entry.deck.back} alt="" draggable={false} />
+                <img className="card-face card-front" src={entry.card.image} alt={entry.card.name} draggable={false} />
               </div>
-              {tc.note && <span className="note-dot" title="Є нотатка" />}
 
               {selected === tc.uid && (
-                <div className="card-toolbar" onPointerDown={(e) => e.stopPropagation()}>
-                  <button onClick={() => flipCard(tc.uid)} title="Перевернути">🔄</button>
-                  <button onClick={() => setZoomed(tc.uid)} title="Розглянути">🔍</button>
-                  <button onClick={() => returnToPile(tc.uid)} title="Повернути в колоду">↩</button>
-                </div>
+                <>
+                  <div
+                    className="handle handle-rotate"
+                    title="Повернути"
+                    onPointerDown={(e) => startGesture(e, tc.uid, 'rotate')}
+                  >
+                    ⟳
+                  </div>
+                  <div
+                    className="handle handle-resize"
+                    title="Змінити розмір"
+                    onPointerDown={(e) => startGesture(e, tc.uid, 'resize')}
+                  />
+                </>
               )}
             </div>
           );
         })}
+
+        {/* Малюнки: завжди поверх карток, свг-полотно на весь стіл */}
+        <svg className="draw-layer" width={canvasSize.w} height={canvasSize.h}>
+          {annotations
+            .filter((a) => a.kind === 'draw' && a.points?.length > 1)
+            .map((a) => {
+              const pts = a.points
+                .map((p) => `${p.x * canvasSize.w},${p.y * canvasSize.h}`)
+                .join(' ');
+              return (
+                <g key={a.uid}>
+                  <polyline
+                    points={pts}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth={a.size + (a.outlineWidth ?? 0) * 2 + 16}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{ pointerEvents: 'stroke', cursor: 'grab' }}
+                    onPointerDown={(e) => onAnnPointerDown(e, a.uid)}
+                  />
+                  {a.outlineColor && (
+                    <polyline
+                      points={pts}
+                      fill="none"
+                      stroke={a.outlineColor}
+                      strokeWidth={a.size + (a.outlineWidth ?? 0) * 2}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      style={{ pointerEvents: 'none' }}
+                      opacity={a.outlineAlpha ?? 1}
+                    />
+                  )}
+                  <polyline
+                    points={pts}
+                    fill="none"
+                    stroke={a.color}
+                    strokeWidth={a.size}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    style={{ pointerEvents: 'none' }}
+                    opacity={(a.alpha ?? 1) * (selectedAnn === a.uid ? 0.85 : 1)}
+                  />
+                  {selectedAnn === a.uid && (
+                    <polyline
+                      points={pts}
+                      fill="none"
+                      stroke="var(--gold)"
+                      strokeWidth={a.size + 6}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      opacity={0.5}
+                      style={{ pointerEvents: 'none' }}
+                    />
+                  )}
+                </g>
+              );
+            })}
+        </svg>
+
+        {/* Текстові наліпки */}
+        {annotations
+          .filter((a) => a.kind === 'text')
+          .map((a) => (
+            <div
+              key={a.uid}
+              className={`text-ann ${selectedAnn === a.uid ? 'is-selected' : ''}`}
+              style={{
+                left: a.x * canvasSize.w,
+                top: a.y * canvasSize.h,
+                color: hexToRgba(a.color, a.alpha ?? 1),
+                fontSize: a.size,
+                zIndex: 10000 + a.z,
+                WebkitTextStroke: a.outlineColor
+                  ? `${a.outlineWidth ?? 0}px ${hexToRgba(a.outlineColor, a.outlineAlpha ?? 1)}`
+                  : undefined,
+                paintOrder: 'stroke fill',
+              }}
+              onPointerDown={(e) => onAnnPointerDown(e, a.uid)}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                setEditingAnn(a.uid);
+              }}
+            >
+              {editingAnn === a.uid ? (
+                <textarea
+                  className="text-ann-input"
+                  style={{
+                    color: hexToRgba(a.color, a.alpha ?? 1),
+                    fontSize: a.size,
+                    WebkitTextStroke: a.outlineColor
+                      ? `${a.outlineWidth ?? 0}px ${hexToRgba(a.outlineColor, a.outlineAlpha ?? 1)}`
+                      : undefined,
+                  }}
+                  defaultValue={a.text}
+                  autoFocus
+                  onFocus={(e) => e.target.select()}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  onBlur={(e) => finishEditingText(a.uid, e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') finishEditingText(a.uid, a.text);
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      e.target.blur();
+                    }
+                  }}
+                />
+              ) : (
+                <>
+                  {a.text || <span className="text-ann-placeholder">Текст</span>}
+                  {selectedAnn === a.uid && (
+                    <button
+                      className="text-edit-btn"
+                      title="Редагувати текст"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingAnn(a.uid);
+                      }}
+                    >
+                      ✏️
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+          ))}
       </main>
 
       {pickerOpen && (
         <div className="modal-overlay" onClick={() => setPickerOpen(false)}>
           <div className="picker-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-title-row">
-              <h2>Оберіть карту</h2>
+              <h2>
+                Оберіть карту · {activeDeck.name}
+                {pickerMode === 'blind' ? ' (наосліп)' : ''}
+              </h2>
               <button className="modal-close" onClick={() => setPickerOpen(false)}>✕</button>
             </div>
             <div className="picker-grid">
-              {pile.map((id) => {
-                const card = cardById(id);
+              {(pickerMode === 'blind'
+                ? blindOrder.filter((id) => activePile.includes(id))
+                : activePile
+              ).map((id, idx) => {
+                const entry = cardIndex[id];
+                if (!entry) return null;
                 return (
                   <button key={id} className="picker-card" onClick={() => pickCard(id)}>
-                    <img src={card.image} alt={card.name} loading="lazy" />
+                    {pickerMode === 'blind' ? (
+                      <>
+                        <img src={activeDeck.back} alt={`Карта ${idx + 1}`} loading="lazy" />
+                        <span className="picker-card-number">{idx + 1}</span>
+                      </>
+                    ) : (
+                      <img src={entry.card.image} alt={entry.card.name} loading="lazy" />
+                    )}
                   </button>
                 );
               })}
@@ -386,37 +1174,6 @@ export default function Table() {
         </div>
       )}
 
-      {zoomedCard && (
-        <div className="modal-overlay" onClick={() => setZoomed(null)}>
-          <div className="zoom-modal" onClick={(e) => e.stopPropagation()}>
-            <button className="modal-close zoom-close" onClick={() => setZoomed(null)}>✕</button>
-            <img
-              className="zoom-image"
-              src={zoomedCard.faceUp ? cardById(zoomedCard.cardId).image : deck.back}
-              alt=""
-            />
-            <div className="zoom-side">
-              {zoomedCard.faceUp ? (
-                <h3>{cardById(zoomedCard.cardId).name}</h3>
-              ) : (
-                <h3>Карта ще закрита</h3>
-              )}
-              <button className="btn btn-table" onClick={() => flipCard(zoomedCard.uid)}>
-                🔄 Перевернути
-              </button>
-              <label className="note-label">
-                Ваші асоціації
-                <textarea
-                  value={zoomedCard.note}
-                  onChange={(e) => setNote(zoomedCard.uid, e.target.value)}
-                  placeholder="Що ви бачите? Про що це для вас?"
-                  rows={6}
-                />
-              </label>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
