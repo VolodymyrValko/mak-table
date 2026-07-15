@@ -5,6 +5,7 @@ import {
   listSessions, endSession, reactivateSession, renameSession, deleteSessionForever,
 } from '../lib/session.js';
 import { loadAllDecks } from '../lib/decks.js';
+import { PillNav, SkeletonRows, BackgroundShapes } from '../components/ui.jsx';
 
 function formatDate(iso) {
   return new Date(iso).toLocaleString('uk-UA', {
@@ -64,6 +65,7 @@ export default function Sessions() {
   if (!supabase) {
     return (
       <div className="sessions-page">
+        <PillNav />
         <p>Список сесій недоступний: бекенд не налаштований.</p>
         <Link to="/">← На головну</Link>
       </div>
@@ -76,12 +78,22 @@ export default function Sessions() {
 
   return (
     <div className="sessions-page">
+      <BackgroundShapes />
+      <PillNav />
+
       <header className="sessions-header">
-        <Link to="/" className="btn btn-ghost">← На головну</Link>
         <h1>Спільні сесії</h1>
       </header>
+      <p className="page-sub">
+        Кожна сесія — окремий спільний стіл. Поділіться кодом чи посиланням,
+        щоб працювати з кимось у реальному часі.
+      </p>
 
       <div className="sessions-tabs">
+        <span
+          className={`tab-indicator ${tab === 'inactive' ? 'pos-1' : ''}`}
+          aria-hidden="true"
+        />
         <button
           className={tab === 'active' ? 'is-active' : ''}
           onClick={() => setTab('active')}
@@ -97,7 +109,7 @@ export default function Sessions() {
       </div>
 
       {error && <p className="home-error">{error}</p>}
-      {sessions === null && !error && <p>Завантаження…</p>}
+      {sessions === null && !error && <SkeletonRows count={3} />}
 
       {sessions && filtered.length === 0 && (
         <p className="sessions-empty">
@@ -137,7 +149,8 @@ export default function Sessions() {
                 </span>
               )}
               <span className="session-meta">
-                Код: {s.code} · {formatDate(s.created_at)}
+                <span className="session-code-chip">{s.code}</span>
+                {formatDate(s.created_at)}
               </span>
             </div>
             <div className="session-actions">

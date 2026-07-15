@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase.js';
 import {
   loadAllDecks, createDeck, deleteDeck, renameDeck, reorderDeck, updateDeckDescription,
 } from '../lib/decks.js';
+import { PillNav, SkeletonRows, BackgroundShapes } from '../components/ui.jsx';
 
 export default function Decks() {
   const [decks, setDecks] = useState(null);
@@ -123,6 +124,7 @@ export default function Decks() {
   if (!supabase) {
     return (
       <div className="decks-page">
+        <PillNav />
         <p>Власні колоди недоступні: бекенд не налаштований.</p>
         <Link to="/">← На головну</Link>
       </div>
@@ -133,15 +135,21 @@ export default function Decks() {
 
   return (
     <div className="decks-page">
+      <BackgroundShapes />
+      <PillNav />
+
       <header className="decks-header">
-        <Link to="/" className="btn btn-ghost">← На головну</Link>
         <h1>Мої колоди</h1>
       </header>
+      <p className="page-sub">
+        Вбудовані колоди доступні одразу, а власні можна зібрати з будь-яких
+        зображень — вони зʼявляться на столі поруч з іншими.
+      </p>
 
       {error && <p className="home-error">{error}</p>}
 
       <section className="deck-list">
-        {decks === null && <p>Завантаження…</p>}
+        {decks === null && <SkeletonRows count={3} />}
         {decks?.map((d) => {
           const customIdx = customDecks.findIndex((x) => x.id === d.id);
           return (
@@ -231,8 +239,11 @@ export default function Decks() {
         })}
       </section>
 
-      <section className="deck-create">
+      <section className="deck-create shine">
         <h2>Нова колода</h2>
+        <p className="deck-create-sub">
+          Додайте щонайменше дві картки — і колода готова до роботи.
+        </p>
         <form onSubmit={handleCreate}>
           <label
             className="dropzone"

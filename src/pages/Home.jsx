@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { supabase } from '../lib/supabase.js';
 import { createSession } from '../lib/session.js';
 import { loadFullDecks } from '../lib/decks.js';
+import { PillNav, Spotlight, BackgroundShapes } from '../components/ui.jsx';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -32,7 +33,11 @@ export default function Home() {
 
   return (
     <div className="home">
+      <BackgroundShapes />
+      <PillNav />
+
       <header className="home-hero">
+        <span className="eyebrow">Простір для внутрішньої роботи</span>
         <h1>МАК-<span className="accent">стіл</span></h1>
         <p className="home-tagline">
           Тихий простір для роботи з метафоричними асоціативними картками —
@@ -53,16 +58,6 @@ export default function Home() {
             </button>
           )}
         </div>
-        {supabase && (
-          <div className="home-links">
-            <Link to="/decks" className="decks-link">
-              🃏 Мої колоди
-            </Link>
-            <Link to="/sessions" className="decks-link">
-              📋 Спільні сесії
-            </Link>
-          </div>
-        )}
         {error && <p className="home-error">{error}</p>}
 
         <div className="hero-cards" aria-hidden="true">
@@ -76,20 +71,20 @@ export default function Home() {
 
       <section className="home-steps">
         <h2>Як це працює</h2>
-        <ol>
-          <li>
+        <ol className="bento">
+          <Spotlight as="li">
             <strong>Відкрийте стіл</strong> — усі ваші колоди вже там,
             перемикайтеся між ними просто за столом.
-          </li>
-          <li>
+          </Spotlight>
+          <Spotlight as="li">
             <strong>Витягніть картку</strong> — наосліп або обираючи свідомо.
             Карти з різних колод можуть лежати поруч.
-          </li>
-          <li>
+          </Spotlight>
+          <Spotlight as="li">
             <strong>Досліджуйте образ</strong> — рухайте, перевертайте,
             наближайте, додавайте нотатки.
-          </li>
-          <li>
+          </Spotlight>
+          <li className="bento-featured">
             <strong>Працюйте разом</strong> — поділіться посиланням, і ваш
             співрозмовник побачить той самий стіл у реальному часі.
           </li>
